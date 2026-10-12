@@ -108,8 +108,9 @@
   .icon-btn{width:36px; height:36px; border-radius:50%; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; color:var(--ink);}
   .search-box{flex-grow:1; display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:10px 12px;}
   .search-box input{border:none; outline:none; font-size:13px; flex-grow:1; font-family:inherit; color:var(--ink); background:transparent;}
-  .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative;}
+  .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative; height:190px;}
   .map-wrap img{width:100%; display:block;}
+  .map-wrap .leaflet-container{background:#dce9f0;}
   .locate-btn{position:absolute; right:12px; bottom:12px; width:38px; height:38px; border-radius:50%; background:var(--surface); box-shadow:0 4px 10px rgba(13,71,161,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .sugg-row{display:flex; gap:10px; padding:0 16px; overflow-x:auto;}
   .sugg-card{flex-shrink:0; width:130px; border-radius:14px; overflow:hidden; background:var(--surface); border:1px solid var(--line); position:relative;}
@@ -297,6 +298,672 @@
   .trail-chip{font-size:10.5px; color:var(--muted); display:flex; align-items:center; gap:3px;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<!-- Leaflet (carte réelle OpenStreetMap) : CSS inlinée depuis la lib officielle, JS via CDN -->
+<style>
+/* required styles */
+
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-pane > svg,
+.leaflet-pane > canvas,
+.leaflet-zoom-box,
+.leaflet-image-layer,
+.leaflet-layer {
+	position: absolute;
+	left: 0;
+	top: 0;
+	}
+.leaflet-container {
+	overflow: hidden;
+	}
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+	-webkit-user-select: none;
+	   -moz-user-select: none;
+	        user-select: none;
+	  -webkit-user-drag: none;
+	}
+/* Prevents IE11 from highlighting tiles in blue */
+.leaflet-tile::selection {
+	background: transparent;
+}
+/* Safari renders non-retina tile on retina better with this, but Chrome is worse */
+.leaflet-safari .leaflet-tile {
+	image-rendering: -webkit-optimize-contrast;
+	}
+/* hack that prevents hw layers "stretching" when loading new tiles */
+.leaflet-safari .leaflet-tile-container {
+	width: 1600px;
+	height: 1600px;
+	-webkit-transform-origin: 0 0;
+	}
+.leaflet-marker-icon,
+.leaflet-marker-shadow {
+	display: block;
+	}
+/* .leaflet-container svg: reset svg max-width decleration shipped in Joomla! (joomla.org) 3.x */
+/* .leaflet-container img: map is broken in FF if you have max-width: 100% on tiles */
+.leaflet-container .leaflet-overlay-pane svg {
+	max-width: none !important;
+	max-height: none !important;
+	}
+.leaflet-container .leaflet-marker-pane img,
+.leaflet-container .leaflet-shadow-pane img,
+.leaflet-container .leaflet-tile-pane img,
+.leaflet-container img.leaflet-image-layer,
+.leaflet-container .leaflet-tile {
+	max-width: none !important;
+	max-height: none !important;
+	width: auto;
+	padding: 0;
+	}
+
+.leaflet-container img.leaflet-tile {
+	/* See: https://bugs.chromium.org/p/chromium/issues/detail?id=600120 */
+	mix-blend-mode: plus-lighter;
+}
+
+.leaflet-container.leaflet-touch-zoom {
+	-ms-touch-action: pan-x pan-y;
+	touch-action: pan-x pan-y;
+	}
+.leaflet-container.leaflet-touch-drag {
+	-ms-touch-action: pinch-zoom;
+	/* Fallback for FF which doesn't support pinch-zoom */
+	touch-action: none;
+	touch-action: pinch-zoom;
+}
+.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom {
+	-ms-touch-action: none;
+	touch-action: none;
+}
+.leaflet-container {
+	-webkit-tap-highlight-color: transparent;
+}
+.leaflet-container a {
+	-webkit-tap-highlight-color: rgba(51, 181, 229, 0.4);
+}
+.leaflet-tile {
+	filter: inherit;
+	visibility: hidden;
+	}
+.leaflet-tile-loaded {
+	visibility: inherit;
+	}
+.leaflet-zoom-box {
+	width: 0;
+	height: 0;
+	-moz-box-sizing: border-box;
+	     box-sizing: border-box;
+	z-index: 800;
+	}
+/* workaround for https://bugzilla.mozilla.org/show_bug.cgi?id=888319 */
+.leaflet-overlay-pane svg {
+	-moz-user-select: none;
+	}
+
+.leaflet-pane         { z-index: 400; }
+
+.leaflet-tile-pane    { z-index: 200; }
+.leaflet-overlay-pane { z-index: 400; }
+.leaflet-shadow-pane  { z-index: 500; }
+.leaflet-marker-pane  { z-index: 600; }
+.leaflet-tooltip-pane   { z-index: 650; }
+.leaflet-popup-pane   { z-index: 700; }
+
+.leaflet-map-pane canvas { z-index: 100; }
+.leaflet-map-pane svg    { z-index: 200; }
+
+.leaflet-vml-shape {
+	width: 1px;
+	height: 1px;
+	}
+.lvml {
+	behavior: url(#default#VML);
+	display: inline-block;
+	position: absolute;
+	}
+
+
+/* control positioning */
+
+.leaflet-control {
+	position: relative;
+	z-index: 800;
+	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */
+	pointer-events: auto;
+	}
+.leaflet-top,
+.leaflet-bottom {
+	position: absolute;
+	z-index: 1000;
+	pointer-events: none;
+	}
+.leaflet-top {
+	top: 0;
+	}
+.leaflet-right {
+	right: 0;
+	}
+.leaflet-bottom {
+	bottom: 0;
+	}
+.leaflet-left {
+	left: 0;
+	}
+.leaflet-control {
+	float: left;
+	clear: both;
+	}
+.leaflet-right .leaflet-control {
+	float: right;
+	}
+.leaflet-top .leaflet-control {
+	margin-top: 10px;
+	}
+.leaflet-bottom .leaflet-control {
+	margin-bottom: 10px;
+	}
+.leaflet-left .leaflet-control {
+	margin-left: 10px;
+	}
+.leaflet-right .leaflet-control {
+	margin-right: 10px;
+	}
+
+
+/* zoom and fade animations */
+
+.leaflet-fade-anim .leaflet-popup {
+	opacity: 0;
+	-webkit-transition: opacity 0.2s linear;
+	   -moz-transition: opacity 0.2s linear;
+	        transition: opacity 0.2s linear;
+	}
+.leaflet-fade-anim .leaflet-map-pane .leaflet-popup {
+	opacity: 1;
+	}
+.leaflet-zoom-animated {
+	-webkit-transform-origin: 0 0;
+	    -ms-transform-origin: 0 0;
+	        transform-origin: 0 0;
+	}
+svg.leaflet-zoom-animated {
+	will-change: transform;
+}
+
+.leaflet-zoom-anim .leaflet-zoom-animated {
+	-webkit-transition: -webkit-transform 0.25s cubic-bezier(0,0,0.25,1);
+	   -moz-transition:    -moz-transform 0.25s cubic-bezier(0,0,0.25,1);
+	        transition:         transform 0.25s cubic-bezier(0,0,0.25,1);
+	}
+.leaflet-zoom-anim .leaflet-tile,
+.leaflet-pan-anim .leaflet-tile {
+	-webkit-transition: none;
+	   -moz-transition: none;
+	        transition: none;
+	}
+
+.leaflet-zoom-anim .leaflet-zoom-hide {
+	visibility: hidden;
+	}
+
+
+/* cursors */
+
+.leaflet-interactive {
+	cursor: pointer;
+	}
+.leaflet-grab {
+	cursor: -webkit-grab;
+	cursor:    -moz-grab;
+	cursor:         grab;
+	}
+.leaflet-crosshair,
+.leaflet-crosshair .leaflet-interactive {
+	cursor: crosshair;
+	}
+.leaflet-popup-pane,
+.leaflet-control {
+	cursor: auto;
+	}
+.leaflet-dragging .leaflet-grab,
+.leaflet-dragging .leaflet-grab .leaflet-interactive,
+.leaflet-dragging .leaflet-marker-draggable {
+	cursor: move;
+	cursor: -webkit-grabbing;
+	cursor:    -moz-grabbing;
+	cursor:         grabbing;
+	}
+
+/* marker & overlays interactivity */
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-image-layer,
+.leaflet-pane > svg path,
+.leaflet-tile-container {
+	pointer-events: none;
+	}
+
+.leaflet-marker-icon.leaflet-interactive,
+.leaflet-image-layer.leaflet-interactive,
+.leaflet-pane > svg path.leaflet-interactive,
+svg.leaflet-image-layer.leaflet-interactive path {
+	pointer-events: visiblePainted; /* IE 9-10 doesn't have auto */
+	pointer-events: auto;
+	}
+
+/* visual tweaks */
+
+.leaflet-container {
+	background: #ddd;
+	outline-offset: 1px;
+	}
+.leaflet-container a {
+	color: #0078A8;
+	}
+.leaflet-zoom-box {
+	border: 2px dotted #38f;
+	background: rgba(255,255,255,0.5);
+	}
+
+
+/* general typography */
+.leaflet-container {
+	font-family: "Helvetica Neue", Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	font-size: 0.75rem;
+	line-height: 1.5;
+	}
+
+
+/* general toolbar styles */
+
+.leaflet-bar {
+	box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+	border-radius: 4px;
+	}
+.leaflet-bar a {
+	background-color: #fff;
+	border-bottom: 1px solid #ccc;
+	width: 26px;
+	height: 26px;
+	line-height: 26px;
+	display: block;
+	text-align: center;
+	text-decoration: none;
+	color: black;
+	}
+.leaflet-bar a,
+.leaflet-control-layers-toggle {
+	background-position: 50% 50%;
+	background-repeat: no-repeat;
+	display: block;
+	}
+.leaflet-bar a:hover,
+.leaflet-bar a:focus {
+	background-color: #f4f4f4;
+	}
+.leaflet-bar a:first-child {
+	border-top-left-radius: 4px;
+	border-top-right-radius: 4px;
+	}
+.leaflet-bar a:last-child {
+	border-bottom-left-radius: 4px;
+	border-bottom-right-radius: 4px;
+	border-bottom: none;
+	}
+.leaflet-bar a.leaflet-disabled {
+	cursor: default;
+	background-color: #f4f4f4;
+	color: #bbb;
+	}
+
+.leaflet-touch .leaflet-bar a {
+	width: 30px;
+	height: 30px;
+	line-height: 30px;
+	}
+.leaflet-touch .leaflet-bar a:first-child {
+	border-top-left-radius: 2px;
+	border-top-right-radius: 2px;
+	}
+.leaflet-touch .leaflet-bar a:last-child {
+	border-bottom-left-radius: 2px;
+	border-bottom-right-radius: 2px;
+	}
+
+/* zoom control */
+
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+	font: bold 18px 'Lucida Console', Monaco, monospace;
+	text-indent: 1px;
+	}
+
+.leaflet-touch .leaflet-control-zoom-in, .leaflet-touch .leaflet-control-zoom-out  {
+	font-size: 22px;
+	}
+
+
+/* layers control */
+
+.leaflet-control-layers {
+	box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+	background: #fff;
+	border-radius: 5px;
+	}
+.leaflet-control-layers-toggle {
+	background-image: url(images/layers.png);
+	width: 36px;
+	height: 36px;
+	}
+.leaflet-retina .leaflet-control-layers-toggle {
+	background-image: url(images/layers-2x.png);
+	background-size: 26px 26px;
+	}
+.leaflet-touch .leaflet-control-layers-toggle {
+	width: 44px;
+	height: 44px;
+	}
+.leaflet-control-layers .leaflet-control-layers-list,
+.leaflet-control-layers-expanded .leaflet-control-layers-toggle {
+	display: none;
+	}
+.leaflet-control-layers-expanded .leaflet-control-layers-list {
+	display: block;
+	position: relative;
+	}
+.leaflet-control-layers-expanded {
+	padding: 6px 10px 6px 6px;
+	color: #333;
+	background: #fff;
+	}
+.leaflet-control-layers-scrollbar {
+	overflow-y: scroll;
+	overflow-x: hidden;
+	padding-right: 5px;
+	}
+.leaflet-control-layers-selector {
+	margin-top: 2px;
+	position: relative;
+	top: 1px;
+	}
+.leaflet-control-layers label {
+	display: block;
+	font-size: 13px;
+	font-size: 1.08333em;
+	}
+.leaflet-control-layers-separator {
+	height: 0;
+	border-top: 1px solid #ddd;
+	margin: 5px -10px 5px -6px;
+	}
+
+/* Default icon URLs */
+.leaflet-default-icon-path { /* used only in path-guessing heuristic, see L.Icon.Default */
+	background-image: url(images/marker-icon.png);
+	}
+
+
+/* attribution and scale controls */
+
+.leaflet-container .leaflet-control-attribution {
+	background: #fff;
+	background: rgba(255, 255, 255, 0.8);
+	margin: 0;
+	}
+.leaflet-control-attribution,
+.leaflet-control-scale-line {
+	padding: 0 5px;
+	color: #333;
+	line-height: 1.4;
+	}
+.leaflet-control-attribution a {
+	text-decoration: none;
+	}
+.leaflet-control-attribution a:hover,
+.leaflet-control-attribution a:focus {
+	text-decoration: underline;
+	}
+.leaflet-attribution-flag {
+	display: inline !important;
+	vertical-align: baseline !important;
+	width: 1em;
+	height: 0.6669em;
+	}
+.leaflet-left .leaflet-control-scale {
+	margin-left: 5px;
+	}
+.leaflet-bottom .leaflet-control-scale {
+	margin-bottom: 5px;
+	}
+.leaflet-control-scale-line {
+	border: 2px solid #777;
+	border-top: none;
+	line-height: 1.1;
+	padding: 2px 5px 1px;
+	white-space: nowrap;
+	-moz-box-sizing: border-box;
+	     box-sizing: border-box;
+	background: rgba(255, 255, 255, 0.8);
+	text-shadow: 1px 1px #fff;
+	}
+.leaflet-control-scale-line:not(:first-child) {
+	border-top: 2px solid #777;
+	border-bottom: none;
+	margin-top: -2px;
+	}
+.leaflet-control-scale-line:not(:first-child):not(:last-child) {
+	border-bottom: 2px solid #777;
+	}
+
+.leaflet-touch .leaflet-control-attribution,
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+	box-shadow: none;
+	}
+.leaflet-touch .leaflet-control-layers,
+.leaflet-touch .leaflet-bar {
+	border: 2px solid rgba(0,0,0,0.2);
+	background-clip: padding-box;
+	}
+
+
+/* popup */
+
+.leaflet-popup {
+	position: absolute;
+	text-align: center;
+	margin-bottom: 20px;
+	}
+.leaflet-popup-content-wrapper {
+	padding: 1px;
+	text-align: left;
+	border-radius: 12px;
+	}
+.leaflet-popup-content {
+	margin: 13px 24px 13px 20px;
+	line-height: 1.3;
+	font-size: 13px;
+	font-size: 1.08333em;
+	min-height: 1px;
+	}
+.leaflet-popup-content p {
+	margin: 17px 0;
+	margin: 1.3em 0;
+	}
+.leaflet-popup-tip-container {
+	width: 40px;
+	height: 20px;
+	position: absolute;
+	left: 50%;
+	margin-top: -1px;
+	margin-left: -20px;
+	overflow: hidden;
+	pointer-events: none;
+	}
+.leaflet-popup-tip {
+	width: 17px;
+	height: 17px;
+	padding: 1px;
+
+	margin: -10px auto 0;
+	pointer-events: auto;
+
+	-webkit-transform: rotate(45deg);
+	   -moz-transform: rotate(45deg);
+	    -ms-transform: rotate(45deg);
+	        transform: rotate(45deg);
+	}
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+	background: white;
+	color: #333;
+	box-shadow: 0 3px 14px rgba(0,0,0,0.4);
+	}
+.leaflet-container a.leaflet-popup-close-button {
+	position: absolute;
+	top: 0;
+	right: 0;
+	border: none;
+	text-align: center;
+	width: 24px;
+	height: 24px;
+	font: 16px/24px Tahoma, Verdana, sans-serif;
+	color: #757575;
+	text-decoration: none;
+	background: transparent;
+	}
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus {
+	color: #585858;
+	}
+.leaflet-popup-scrolled {
+	overflow: auto;
+	}
+
+.leaflet-oldie .leaflet-popup-content-wrapper {
+	-ms-zoom: 1;
+	}
+.leaflet-oldie .leaflet-popup-tip {
+	width: 24px;
+	margin: 0 auto;
+
+	-ms-filter: "progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678)";
+	filter: progid:DXImageTransform.Microsoft.Matrix(M11=0.70710678, M12=0.70710678, M21=-0.70710678, M22=0.70710678);
+	}
+
+.leaflet-oldie .leaflet-control-zoom,
+.leaflet-oldie .leaflet-control-layers,
+.leaflet-oldie .leaflet-popup-content-wrapper,
+.leaflet-oldie .leaflet-popup-tip {
+	border: 1px solid #999;
+	}
+
+
+/* div icon */
+
+.leaflet-div-icon {
+	background: #fff;
+	border: 1px solid #666;
+	}
+
+
+/* Tooltip */
+/* Base styles for the element that has a tooltip */
+.leaflet-tooltip {
+	position: absolute;
+	padding: 6px;
+	background-color: #fff;
+	border: 1px solid #fff;
+	border-radius: 3px;
+	color: #222;
+	white-space: nowrap;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	pointer-events: none;
+	box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+	}
+.leaflet-tooltip.leaflet-interactive {
+	cursor: pointer;
+	pointer-events: auto;
+	}
+.leaflet-tooltip-top:before,
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+	position: absolute;
+	pointer-events: none;
+	border: 6px solid transparent;
+	background: transparent;
+	content: "";
+	}
+
+/* Directions */
+
+.leaflet-tooltip-bottom {
+	margin-top: 6px;
+}
+.leaflet-tooltip-top {
+	margin-top: -6px;
+}
+.leaflet-tooltip-bottom:before,
+.leaflet-tooltip-top:before {
+	left: 50%;
+	margin-left: -6px;
+	}
+.leaflet-tooltip-top:before {
+	bottom: 0;
+	margin-bottom: -12px;
+	border-top-color: #fff;
+	}
+.leaflet-tooltip-bottom:before {
+	top: 0;
+	margin-top: -12px;
+	margin-left: -6px;
+	border-bottom-color: #fff;
+	}
+.leaflet-tooltip-left {
+	margin-left: -6px;
+}
+.leaflet-tooltip-right {
+	margin-left: 6px;
+}
+.leaflet-tooltip-left:before,
+.leaflet-tooltip-right:before {
+	top: 50%;
+	margin-top: -6px;
+	}
+.leaflet-tooltip-left:before {
+	right: 0;
+	margin-right: -12px;
+	border-left-color: #fff;
+	}
+.leaflet-tooltip-right:before {
+	left: 0;
+	margin-left: -12px;
+	border-right-color: #fff;
+	}
+
+/* Printing */
+
+@media print {
+	/* Prevent printers from removing background-images of controls. */
+	.leaflet-control {
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+		}
+	}
+
+</style>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -362,9 +1029,8 @@
         <div class="icon-btn" onclick="toast('Filtres avancés — à venir')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/><circle cx="6" cy="12" r="1.6" fill="#FF8A00" stroke="none"/><circle cx="10" cy="18" r="1.6" fill="#FF8A00" stroke="none"/></svg></div>
       </div>
       <div class="map-wrap" onclick="openMapView()">
-        <img src="./assets/map.png" alt="Carte de la Martinique">
-        <div id="map-pins-thumb" style="position:absolute; inset:0;"></div>
-        <div class="locate-btn" onclick="event.stopPropagation(); toast('Localisation en cours…')">
+        <div id="leaflet-thumb" style="width:100%; height:100%;"></div>
+        <div class="locate-btn" onclick="event.stopPropagation(); locateMe()">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
         </div>
       </div>
@@ -719,8 +1385,7 @@
   <div class="comments-overlay" id="map-overlay" onclick="if(event.target===this) closeMapView()" style="align-items:center;">
     <div style="width:100%; padding:0 16px;">
       <div style="position:relative;">
-        <img src="./assets/map.png" alt="Carte de la Martinique" style="width:100%; border-radius:16px; display:block;">
-        <div id="map-pins-full" style="position:absolute; inset:0;"></div>
+        <div id="leaflet-full" style="width:100%; height:65vh; border-radius:16px; overflow:hidden;"></div>
       </div>
       <button type="button" onclick="closeMapView()" style="margin:14px auto 0; display:block; padding:10px 20px; border-radius:20px; border:none; background:var(--surface); color:var(--ink); font-weight:700; font-size:13px; cursor:pointer;">Fermer</button>
     </div>
@@ -889,6 +1554,7 @@ async function loadRemotePosts(){
   });
   renderPosts();
   if(openPostId!=null) renderComments();
+  renderMapMarkers();
 }
 
 function timeAgo(iso){
@@ -1021,23 +1687,25 @@ function closeComments(){
   document.getElementById('comments-overlay').classList.remove('show');
   openPostId = null;
 }
-function openMapView(){ document.getElementById('map-overlay').classList.add('show'); }
+function openMapView(){
+  document.getElementById('map-overlay').classList.add('show');
+  ensureMapFull();
+  setTimeout(()=>{ if(mapFull) mapFull.invalidateSize(); }, 60);
+}
 function closeMapView(){ document.getElementById('map-overlay').classList.remove('show'); }
 
-/* ---- Points sur la carte ---- */
+/* ---- Points sur la vraie carte (Leaflet + coordonnées GPS réelles) ---- */
 const MAP_PINS = [
-  {left:29.8, top:11.8, icon:'🍽️', name:'Restaurant Chez Fifine', place:'Le Prêcheur', desc:'Cuisine créole traditionnelle, terrasse avec vue sur la baie.', photo:null},
-  {left:52.8, top:17.6, icon:'🛒', name:'Marché couvert', place:'Sainte-Marie', desc:'Produits locaux, fruits et légumes frais tous les matins.', photo:null},
-  {left:43.3, top:42.0, icon:'👥', name:'Rencontre communautaire', place:'Gros-Morne', desc:'Réunion mensuelle des habitants du quartier.', photo:null},
-  {left:30.8, top:53.2, icon:'🌳', name:'Sentier nature', place:'Fort-de-France', desc:'Randonnée facile, 2h aller-retour, ombragée.', photo:null},
-  {left:70.1, top:48.5, icon:'📅', name:'Marché nocturne', place:'Le Lamentin', desc:'Tous les vendredis soirs, artisanat et street food.', photo:null},
-  {left:71.2, top:63.8, icon:'🚗', name:'Location de voiture', place:'Le Lamentin', desc:'Location courte et longue durée, dépôt à l’aéroport possible.', photo:null},
-  {left:44.6, top:72.8, icon:'🛏️', name:'Villa avec piscine', place:'Les Trois-Îlets', desc:'4 chambres, vue mer, disponible à la semaine.', photo:null},
-  {left:51.5, top:85.4, icon:'🌴', name:'Happy hour plage', place:'Le Diamant', desc:'Cocktails à moitié prix de 17h à 19h, tous les jours.', photo:null},
-  {left:74.4, top:77.9, icon:'📷', name:'Point de vue', place:'Le Marin', desc:'Meilleur spot pour photographier le coucher de soleil sur la baie.', photo:null},
+  {lat:14.8221, lng:-61.1963, icon:'🍽️', name:'Restaurant Chez Fifine', place:'Le Prêcheur', desc:'Cuisine créole traditionnelle, terrasse avec vue sur la baie.', photo:null},
+  {lat:14.7730, lng:-61.0084, icon:'🛒', name:'Marché couvert', place:'Sainte-Marie', desc:'Produits locaux, fruits et légumes frais tous les matins.', photo:null},
+  {lat:14.7084, lng:-61.0303, icon:'👥', name:'Rencontre communautaire', place:'Gros-Morne', desc:'Réunion mensuelle des habitants du quartier.', photo:null},
+  {lat:14.6492, lng:-61.0686, icon:'🌳', name:'Sentier nature', place:'Fort-de-France', desc:'Randonnée facile, 2h aller-retour, ombragée.', photo:null},
+  {lat:14.6231, lng:-60.9923, icon:'📅', name:'Marché nocturne', place:'Le Lamentin', desc:'Tous les vendredis soirs, artisanat et street food.', photo:null},
+  {lat:14.6231, lng:-60.9923, icon:'🚗', name:'Location de voiture', place:'Le Lamentin', desc:'Location courte et longue durée, dépôt à l’aéroport possible.', photo:null},
+  {lat:14.5329, lng:-61.0376, icon:'🛏️', name:'Villa avec piscine', place:'Les Trois-Îlets', desc:'4 chambres, vue mer, disponible à la semaine.', photo:null},
+  {lat:14.4787, lng:-61.0165, icon:'🌴', name:'Happy hour plage', place:'Le Diamant', desc:'Cocktails à moitié prix de 17h à 19h, tous les jours.', photo:null},
+  {lat:14.4822, lng:-60.8589, icon:'📷', name:'Point de vue', place:'Le Marin', desc:'Meilleur spot pour photographier le coucher de soleil sur la baie.', photo:null},
 ];
-let nextPinSlot = 0;
-const NEW_PIN_SLOTS = [{left:57, top:28}, {left:35, top:20}, {left:63, top:57}, {left:48, top:63}];
 const PIN_EMOJI_MAP = {trafic:'🚗', commerces:'🛒', evenements:'📅', communaute:'👥', bonsplans:'🌴', artiste:'🎨'};
 let renderedMapPins = [];
 
@@ -1048,7 +1716,7 @@ function buildRemoteMapPins(){
       const coord = COMMUNE_COORDS[normalizeCommune(p.place)];
       if(!coord) return null;
       return {
-        left: coord.left, top: coord.top, icon: PIN_EMOJI_MAP[p.cat] || '📍',
+        lat: coord.lat, lng: coord.lng, icon: PIN_EMOJI_MAP[p.cat] || '📍',
         name: p.title, place: p.place, desc: p.text || 'Aucune description pour l’instant.',
         photo: p.photo, color: p.color, isNew: true
       };
@@ -1057,7 +1725,7 @@ function buildRemoteMapPins(){
 }
 
 function pinInfo(e, index){
-  e.stopPropagation();
+  if(e) e.stopPropagation();
   const p = renderedMapPins[index];
   if(!p) return;
   document.getElementById('comments-title').textContent = p.icon + ' ' + p.name;
@@ -1069,13 +1737,78 @@ function pinInfo(e, index){
   document.getElementById('comment-form').style.display = 'none';
   document.getElementById('comments-overlay').classList.add('show');
 }
-function renderMapPins(containerId){
-  const c = document.getElementById(containerId);
-  if(!c) return;
+
+/* ---- Moteur de carte Leaflet (vraies tuiles OpenStreetMap + vraies coordonnées) ---- */
+let mapThumb = null, mapFull = null;
+let mapMarkersThumb = [], mapMarkersFull = [];
+let userMarkerThumb = null, userMarkerFull = null;
+const MARTINIQUE_CENTER = [14.6415, -61.0242];
+
+function pinDivIcon(p){
+  return L.divIcon({
+    html: `<div style="width:30px; height:30px; border-radius:50%; background:${p.isNew ? (p.color||'#FF8A00') : '#fff'}; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:15px;">${p.icon}</div>`,
+    className:'', iconSize:[30,30], iconAnchor:[15,15]
+  });
+}
+function userLocDivIcon(){
+  return L.divIcon({
+    html:'<div style="width:16px;height:16px;border-radius:50%;background:#2E9E5B;border:3px solid #fff;box-shadow:0 0 0 5px rgba(46,158,91,0.3), 0 2px 6px rgba(0,0,0,0.3);"></div>',
+    className:'', iconSize:[16,16], iconAnchor:[8,8]
+  });
+}
+function ensureMapThumb(){
+  if(mapThumb || typeof L === 'undefined') return;
+  mapThumb = L.map('leaflet-thumb', {
+    zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false,
+    doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false
+  }).setView(MARTINIQUE_CENTER, 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18}).addTo(mapThumb);
+  renderMapMarkers();
+}
+function ensureMapFull(){
+  if(mapFull || typeof L === 'undefined') return;
+  mapFull = L.map('leaflet-full', {zoomControl:true, attributionControl:true}).setView(MARTINIQUE_CENTER, 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18, attribution:'© OpenStreetMap'}).addTo(mapFull);
+  renderMapMarkers();
+}
+function renderMapMarkers(){
   renderedMapPins = [...MAP_PINS, ...buildRemoteMapPins()];
-  c.innerHTML = renderedMapPins.map((p, i) => `
-    ${p.isNew ? `<div style="position:absolute; left:${p.left}%; top:${p.top}%; transform:translate(-50%,-50%); width:28px; height:28px; border-radius:50%; background:${p.color||'#FF8A00'}; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:13px; pointer-events:none;">${p.icon}</div>` : ''}
-    <button type="button" class="map-pin" style="left:${p.left}%; top:${p.top}%;" onclick="pinInfo(event, ${i})" aria-label="${p.name}"></button>`).join('');
+  [[mapThumb, mapMarkersThumb, false], [mapFull, mapMarkersFull, true]].forEach(([map, markersArr]) => {
+    if(!map) return;
+    markersArr.forEach(m => map.removeLayer(m));
+    markersArr.length = 0;
+    renderedMapPins.forEach((p, i) => {
+      if(p.lat == null || p.lng == null) return;
+      const marker = L.marker([p.lat, p.lng], {icon: pinDivIcon(p), interactive: map === mapFull}).addTo(map);
+      if(map === mapFull){ marker.on('click', () => pinInfo(null, i)); }
+      markersArr.push(marker);
+    });
+  });
+}
+function showUserLocationOnMap(lat, lng){
+  if(typeof L === 'undefined') return;
+  if(mapThumb){
+    if(userMarkerThumb) mapThumb.removeLayer(userMarkerThumb);
+    userMarkerThumb = L.marker([lat, lng], {icon:userLocDivIcon(), interactive:false}).addTo(mapThumb);
+    mapThumb.setView([lat, lng], 12);
+  }
+  if(mapFull){
+    if(userMarkerFull) mapFull.removeLayer(userMarkerFull);
+    userMarkerFull = L.marker([lat, lng], {icon:userLocDivIcon(), interactive:false}).addTo(mapFull);
+    mapFull.setView([lat, lng], 13);
+  }
+}
+function locateMe(){
+  if(!navigator.geolocation){ toast('Géolocalisation non disponible sur cet appareil'); return; }
+  toast('Localisation en cours…');
+  navigator.geolocation.getCurrentPosition(pos => {
+    const {latitude, longitude} = pos.coords;
+    showUserLocationOnMap(latitude, longitude);
+    const nearest = nearestCommune(latitude, longitude);
+    toast(nearest ? 'Tu es proche de ' + nearest.label : 'Position trouvée');
+  }, err => {
+    toast('Localisation refusée ou indisponible — vérifie les autorisations de localisation');
+  }, {enableHighAccuracy:true, timeout:10000});
 }
 function renderComments(){
   const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(openPostId));
@@ -1161,43 +1894,59 @@ function selectFormCat(id){
 }
 
 /* ---- Localisation ---- */
+/* Coordonnées officielles (source : geo.api.gouv.fr, centres des 34 communes) */
 const COMMUNE_COORDS = {
-  grandriviere:    {left:19.3, top:2.5,  label:"Grand'Rivière"},
-  macouba:         {left:33,   top:4,    label:"Macouba"},
-  bassepointe:     {left:42.6, top:5.5,  label:"Basse-Pointe"},
-  ajoupabouillon:  {left:38,   top:12,   label:"Ajoupa-Bouillon"},
-  lorrain:         {left:48,   top:15,   label:"Le Lorrain"},
-  marigot:         {left:53,   top:12,   label:"Le Marigot"},
-  precheur:        {left:19.3, top:19.7, label:"Le Prêcheur"},
-  mornerouge:      {left:35,   top:22,   label:"Le Morne-Rouge"},
-  fondssaintdenis: {left:27,   top:27,   label:"Fonds-Saint-Denis"},
-  saintpierre:     {left:25.0, top:31.0, label:"Saint-Pierre"},
-  mornevert:       {left:28,   top:36,   label:"Le Morne-Vert"},
-  carbet:          {left:22.4, top:40.8, label:"Le Carbet"},
-  grosmorne:       {left:55.4, top:41.3, label:"Gros-Morne"},
-  trinite:         {left:62.8, top:31.0, label:"La Trinité"},
-  saintemarie:     {left:60.0, top:23.0, label:"Sainte-Marie"},
-  bellefontaine:   {left:20,   top:33,   label:"Bellefontaine"},
-  casepilote:      {left:24,   top:48,   label:"Case-Pilote"},
-  schoelcher:      {left:38,   top:55,   label:"Schoelcher"},
-  fortdefrance:    {left:43.0, top:59.7, label:"Fort-de-France"},
-  lamentin:        {left:57.9, top:58.6, label:"Le Lamentin"},
-  robert:          {left:66,   top:44,   label:"Le Robert"},
-  saintjoseph:     {left:48,   top:50,   label:"Saint-Joseph"},
-  ducos:           {left:50,   top:64,   label:"Ducos"},
-  rivieresalee:    {left:45,   top:68,   label:"Rivière-Salée"},
-  francois:        {left:68,   top:56,   label:"Le François"},
-  saintesprit:     {left:56,   top:66,   label:"Saint-Esprit"},
-  troisilets:      {left:33.0, top:78.7, label:"Les Trois-Îlets"},
-  ansesdarlet:     {left:28,   top:82,   label:"Les Anses-d'Arlet"},
-  rivierepilote:   {left:50,   top:78,   label:"Rivière-Pilote"},
-  diamant:         {left:38.8, top:88.2, label:"Le Diamant"},
-  sainteluce:      {left:61.6, top:87.7, label:"Sainte-Luce"},
-  vauclin:         {left:74,   top:70,   label:"Le Vauclin"},
-  marin:           {left:76.0, top:85.7, label:"Le Marin"},
-  sainteanne:      {left:80,   top:90,   label:"Sainte-Anne"},
+  grandriviere:    {lat:14.8470, lng:-61.1836, label:"Grand'Rivière"},
+  macouba:         {lat:14.8474, lng:-61.1465, label:"Macouba"},
+  bassepointe:     {lat:14.8410, lng:-61.1237, label:"Basse-Pointe"},
+  ajoupabouillon:  {lat:14.8160, lng:-61.1305, label:"Ajoupa-Bouillon"},
+  lorrain:         {lat:14.7995, lng:-61.0740, label:"Le Lorrain"},
+  marigot:         {lat:14.7795, lng:-61.0530, label:"Le Marigot"},
+  precheur:        {lat:14.8221, lng:-61.1963, label:"Le Prêcheur"},
+  mornerouge:      {lat:14.7695, lng:-61.1217, label:"Le Morne-Rouge"},
+  fondssaintdenis: {lat:14.7228, lng:-61.1207, label:"Fonds-Saint-Denis"},
+  saintpierre:     {lat:14.7717, lng:-61.1735, label:"Saint-Pierre"},
+  mornevert:       {lat:14.7046, lng:-61.1362, label:"Le Morne-Vert"},
+  carbet:          {lat:14.7041, lng:-61.1583, label:"Le Carbet"},
+  grosmorne:       {lat:14.7084, lng:-61.0303, label:"Gros-Morne"},
+  trinite:         {lat:14.7518, lng:-60.9469, label:"La Trinité"},
+  saintemarie:     {lat:14.7730, lng:-61.0084, label:"Sainte-Marie"},
+  bellefontaine:   {lat:14.6747, lng:-61.1460, label:"Bellefontaine"},
+  casepilote:      {lat:14.6594, lng:-61.1297, label:"Case-Pilote"},
+  schoelcher:      {lat:14.6518, lng:-61.1001, label:"Schoelcher"},
+  fortdefrance:    {lat:14.6492, lng:-61.0686, label:"Fort-de-France"},
+  lamentin:        {lat:14.6231, lng:-60.9923, label:"Le Lamentin"},
+  robert:          {lat:14.6786, lng:-60.9243, label:"Le Robert"},
+  saintjoseph:     {lat:14.6835, lng:-61.0407, label:"Saint-Joseph"},
+  ducos:           {lat:14.5785, lng:-60.9685, label:"Ducos"},
+  rivieresalee:    {lat:14.5262, lng:-60.9623, label:"Rivière-Salée"},
+  francois:        {lat:14.6093, lng:-60.8976, label:"Le François"},
+  saintesprit:     {lat:14.5617, lng:-60.9233, label:"Saint-Esprit"},
+  troisilets:      {lat:14.5329, lng:-61.0376, label:"Les Trois-Îlets"},
+  ansesdarlet:     {lat:14.4996, lng:-61.0736, label:"Les Anses-d'Arlet"},
+  rivierepilote:   {lat:14.5027, lng:-60.8970, label:"Rivière-Pilote"},
+  diamant:         {lat:14.4787, lng:-61.0165, label:"Le Diamant"},
+  sainteluce:      {lat:14.4904, lng:-60.9467, label:"Sainte-Luce"},
+  vauclin:         {lat:14.5420, lng:-60.8595, label:"Le Vauclin"},
+  marin:           {lat:14.4822, lng:-60.8589, label:"Le Marin"},
+  sainteanne:      {lat:14.4314, lng:-60.8516, label:"Sainte-Anne"},
 };
 const COMMUNES = Object.keys(COMMUNE_COORDS).map(k => COMMUNE_COORDS[k].label).sort((a,b) => a.localeCompare(b, 'fr'));
+function haversineKm(lat1, lng1, lat2, lng2){
+  const R = 6371, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+function nearestCommune(lat, lng){
+  let best = null, bestDist = Infinity;
+  for(const key in COMMUNE_COORDS){
+    const c = COMMUNE_COORDS[key];
+    const d = haversineKm(lat, lng, c.lat, c.lng);
+    if(d < bestDist){ bestDist = d; best = c; }
+  }
+  return best;
+}
 function normalizeCommune(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .toLowerCase().replace(/^(le |la |les |l')/,'').replace(/[^a-z]/g,'');
@@ -1215,11 +1964,22 @@ function simulateLocate(){
   document.getElementById('loc-status').textContent = 'Localisation en cours…';
   document.getElementById('loc-detail').textContent = 'Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné';
   clearTimeout(locTimer);
-  locTimer = setTimeout(()=>{
-    selectedCommune = 'Fort-de-France';
+  if(!navigator.geolocation){
+    document.getElementById('loc-status').textContent = 'GPS indisponible';
+    document.getElementById('loc-detail').textContent = 'Choisis ta commune manuellement ci-dessous';
+    toggleManualLocation();
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const nearest = nearestCommune(pos.coords.latitude, pos.coords.longitude);
+    selectedCommune = nearest ? nearest.label : 'Fort-de-France';
     document.getElementById('loc-status').textContent = 'Position détectée';
     document.getElementById('loc-detail').textContent = selectedCommune + ' (détection automatique)';
-  }, 900);
+  }, err => {
+    document.getElementById('loc-status').textContent = 'Position indisponible';
+    document.getElementById('loc-detail').textContent = 'Autorise la localisation ou choisis ta commune manuellement';
+    toggleManualLocation();
+  }, {enableHighAccuracy:true, timeout:10000});
 }
 function toggleManualLocation(){
   clearTimeout(locTimer);
@@ -1333,22 +2093,15 @@ async function handlePublish(e){
     // Si elle a été publiée côté Supabase, son pin apparaît automatiquement via
     // buildRemoteMapPins() (dérivé de remotePosts) — pas besoin de le dupliquer ici.
     const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
-    let pinLeft, pinTop;
     if(coord){
-      pinLeft = coord.left; pinTop = coord.top;
-    } else {
-      const slot = NEW_PIN_SLOTS[nextPinSlot % NEW_PIN_SLOTS.length];
-      nextPinSlot++;
-      pinLeft = slot.left; pinTop = slot.top;
+      MAP_PINS.push({
+        lat: coord.lat, lng: coord.lng, icon: PIN_EMOJI_MAP[selectedCat] || '📍',
+        name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
+        photo: pendingPhoto, color: cat.color, isNew: true
+      });
     }
-    MAP_PINS.push({
-      left: pinLeft, top: pinTop, icon: PIN_EMOJI_MAP[selectedCat] || '📍',
-      name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
-      photo: pendingPhoto, color: cat.color, isNew: true
-    });
   }
-  renderMapPins('map-pins-thumb');
-  renderMapPins('map-pins-full');
+  renderMapMarkers();
   activeCat = 'toutes';
   renderCatRow();
   renderPosts();
@@ -1374,6 +2127,7 @@ function showScreen(name){
   if(name==='publier') simulateLocate();
   if(name==='meteo'){ renderWeather(); renderWxReports(); }
   if(name==='randonnee'){ renderTrails(); renderHikeReports(); }
+  if(name==='carte'){ ensureMapThumb(); setTimeout(()=>{ if(mapThumb) mapThumb.invalidateSize(); }, 60); }
 }
 
 /* ---- Météo ---- */
@@ -1865,8 +2619,7 @@ renderCatGrid();
 renderUrgency();
 initTheme();
 initNotifPrefs();
-renderMapPins('map-pins-thumb');
-renderMapPins('map-pins-full');
+renderMapMarkers();
 document.getElementById('quick-wx-sub').textContent = WEATHER_NOW.temp + '°C · ' + WEATHER_NOW.place;
 document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' sentiers à découvrir';
 initBackend();
