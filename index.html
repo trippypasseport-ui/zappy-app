@@ -2090,8 +2090,10 @@ async function handlePublish(e){
   const desc = document.getElementById('f-desc').value.trim();
   if(!title){ toast('Ajoute un titre avant de publier'); return; }
   const cat = CATEGORIES.find(c=>c.id===selectedCat);
+  const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
   let publishedRemotely = false;
   if(sb && currentUserId){
+    const geoPoint = coord ? `POINT(${coord.lng} ${coord.lat})` : `POINT(${MARTINIQUE_CENTER[1]} ${MARTINIQUE_CENTER[0]})`;
     const { error } = await sb.from('publications').insert({
       author_id: currentUserId,
       author_name: myPseudo,
@@ -2101,6 +2103,7 @@ async function handlePublish(e){
       photo_url: pendingPhoto || null,
       commune: selectedCommune,
       urgency: selectedCat==='trafic' ? selectedUrgency : null,
+      location: geoPoint,
     });
     if(error){ console.warn('Publication partagée échouée, repli local', error); }
     else { publishedRemotely = true; await loadRemotePosts(); }
@@ -2118,7 +2121,6 @@ async function handlePublish(e){
     // Publication restée locale (pas de backend partagé) : on pousse le pin nous-mêmes.
     // Si elle a été publiée côté Supabase, son pin apparaît automatiquement via
     // buildRemoteMapPins() (dérivé de remotePosts) — pas besoin de le dupliquer ici.
-    const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
     if(coord){
       MAP_PINS.push({
         lat: coord.lat, lng: coord.lng, icon: PIN_EMOJI_MAP[selectedCat] || '📍',
