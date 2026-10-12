@@ -1762,10 +1762,10 @@ function userLocDivIcon(){
 /* Martinique uniquement : empêche de voir les îles voisines en dézoomant */
 const MARTINIQUE_BOUNDS = [[14.30, -61.35], [14.98, -60.72]];
 const MARTINIQUE_MIN_ZOOM = 10;
-/* Fond de carte clair et épuré (CartoDB Positron) — plus proche de l'esprit
-   de l'illustration d'origine que le rendu OpenStreetMap par défaut */
-const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-const MAP_TILE_ATTR = '© OpenStreetMap, © CARTO';
+/* Fond de carte OpenStreetMap standard — fonctionne sans clé API
+   (CartoDB nécessite désormais une inscription/clé, donc écarté) */
+const MAP_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const MAP_TILE_ATTR = '© OpenStreetMap contributors';
 
 function tryAutoLocate(){
   if(!navigator.geolocation) return;
