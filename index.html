@@ -104,15 +104,20 @@
   .post-photo img{width:100%; height:100%; object-fit:cover; display:block;}
 
   /* ---- Carte ---- */
-  #screen-carte .topbar{display:flex; align-items:center; gap:10px; padding:14px 16px 10px;}
+  /* La carte occupe tout l'espace restant (écran en colonne flexible) : la
+     ligne "Suggestions" garde sa hauteur naturelle, la carte s'étire dans
+     l'espace libre au lieu de laisser du vide en bas, au-dessus des onglets. */
+  #screen-carte.active{display:flex; flex-direction:column; min-height:100%;}
+  #screen-carte .topbar{display:flex; align-items:center; gap:10px; padding:14px 16px 10px; flex-shrink:0;}
   .icon-btn{width:36px; height:36px; border-radius:50%; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; color:var(--ink);}
   .search-box{flex-grow:1; display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:10px 12px;}
   .search-box input{border:none; outline:none; font-size:13px; flex-grow:1; font-family:inherit; color:var(--ink); background:transparent;}
-  .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative; height:190px;}
+  .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative; flex:1 1 auto; min-height:220px;}
   .map-wrap img{width:100%; display:block;}
   .map-wrap .leaflet-container{background:#dce9f0;}
   .locate-btn{position:absolute; right:12px; bottom:12px; width:38px; height:38px; border-radius:50%; background:var(--surface); box-shadow:0 4px 10px rgba(13,71,161,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
-  .sugg-row{display:flex; gap:10px; padding:0 16px; overflow-x:auto;}
+  #screen-carte .section-head{flex-shrink:0;}
+  .sugg-row{display:flex; gap:10px; padding:0 16px; overflow-x:auto; flex-wrap:nowrap; flex-shrink:0;}
   .sugg-card{flex-shrink:0; width:130px; border-radius:14px; overflow:hidden; background:var(--surface); border:1px solid var(--line); position:relative;}
   .sugg-card img{width:100%; height:88px; object-fit:cover; display:block;}
   .sugg-info{padding:8px 9px;}
@@ -2160,6 +2165,12 @@ function showScreen(name){
   if(name==='randonnee'){ renderTrails(); renderHikeReports(); }
   if(name==='carte'){ ensureMapThumb(); setTimeout(()=>{ if(mapThumb) mapThumb.invalidateSize(); }, 60); }
 }
+
+/* La carte miniature s'étire désormais en hauteur flexible (flex:1 1 auto) :
+   on réajuste Leaflet si l'écran change de taille (rotation, redimensionnement). */
+window.addEventListener('resize', () => {
+  if(mapThumb) mapThumb.invalidateSize();
+});
 
 /* ---- Météo ---- */
 const WEATHER_NOW = {temp:29, feels:32, icon:'⛅', condition:"Ensoleillé, quelques nuages", place:'Fort-de-France'};
