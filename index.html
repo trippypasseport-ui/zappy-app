@@ -222,6 +222,9 @@
     background:rgba(0,0,0,0); pointer-events:none; transition:background .2s;
   }
   .comments-overlay.show{background:rgba(8,14,21,0.5); pointer-events:auto;}
+  /* La carte plein écran doit masquer totalement la mini-carte de l'écran Carte
+     derrière elle (sinon le fond semi-transparent laisse deviner une 2e carte) */
+  #map-overlay.show{background:var(--bg-page);}
   #map-overlay > div{opacity:0; transform:scale(0.96); transition:all .2s; pointer-events:none;}
   #map-overlay.show > div{opacity:1; transform:scale(1); pointer-events:auto;}
   .map-pin{position:absolute; width:30px; height:30px; transform:translate(-50%,-55%); cursor:pointer; background:transparent; border:none; padding:0;}
@@ -1756,20 +1759,41 @@ function userLocDivIcon(){
     className:'', iconSize:[16,16], iconAnchor:[8,8]
   });
 }
+/* Martinique uniquement : empêche de voir les îles voisines en dézoomant */
+const MARTINIQUE_BOUNDS = [[14.30, -61.35], [14.98, -60.72]];
+const MARTINIQUE_MIN_ZOOM = 10;
+/* Fond de carte clair et épuré (CartoDB Positron) — plus proche de l'esprit
+   de l'illustration d'origine que le rendu OpenStreetMap par défaut */
+const MAP_TILE_URL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+const MAP_TILE_ATTR = '© OpenStreetMap, © CARTO';
+
+function tryAutoLocate(){
+  if(!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(pos => {
+    showUserLocationOnMap(pos.coords.latitude, pos.coords.longitude);
+  }, () => { /* échec/permission refusée : on reste silencieux, pas de toast */ }, {enableHighAccuracy:true, timeout:8000});
+}
+
 function ensureMapThumb(){
   if(mapThumb || typeof L === 'undefined') return;
   mapThumb = L.map('leaflet-thumb', {
     zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false,
-    doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false
+    doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false,
+    minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
   }).setView(MARTINIQUE_CENTER, 10);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18}).addTo(mapThumb);
+  L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapThumb);
   renderMapMarkers();
+  tryAutoLocate();
 }
 function ensureMapFull(){
   if(mapFull || typeof L === 'undefined') return;
-  mapFull = L.map('leaflet-full', {zoomControl:true, attributionControl:true}).setView(MARTINIQUE_CENTER, 10);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18, attribution:'© OpenStreetMap'}).addTo(mapFull);
+  mapFull = L.map('leaflet-full', {
+    zoomControl:true, attributionControl:true,
+    minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
+  }).setView(MARTINIQUE_CENTER, 10);
+  L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapFull);
   renderMapMarkers();
+  tryAutoLocate();
 }
 function renderMapMarkers(){
   renderedMapPins = [...MAP_PINS, ...buildRemoteMapPins()];
