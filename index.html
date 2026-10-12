@@ -296,6 +296,7 @@
   .trail-badge{font-size:10px; font-weight:800; padding:3px 8px; border-radius:8px;}
   .trail-chip{font-size:10.5px; color:var(--muted); display:flex; align-items:center; gap:3px;}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 </head>
 <body>
 
@@ -836,6 +837,84 @@ let posts = [
 let nextId = 5;
 let activeCat = 'toutes';
 
+/* ---- Backend partagé (Supabase) ---- */
+const SUPABASE_URL = 'https://idcagubpyhrilnyaoaha.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkY2FndWJweWhyaWxueWFvYWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4NTk4NDksImV4cCI6MjEwNTQzNTg0OX0.tsjeT6uaBLZugxVJpLsdVWwXqZLP7HmwPfKlV3HWEyw';
+let sb = null;
+let currentUserId = null;
+let myPseudo = null;
+let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
+let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
+
+function getPseudo(){
+  let p = localStorage.getItem('zapy_pseudo');
+  if(!p){
+    const n = Math.floor(100 + Math.random()*900);
+    p = 'Testeur' + n + '972';
+    localStorage.setItem('zapy_pseudo', p);
+  }
+  return p;
+}
+
+async function initBackend(){
+  try{
+    if(typeof supabase === 'undefined'){ console.warn('Supabase JS non chargé'); return; }
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    myPseudo = getPseudo();
+    let { data: { session } } = await sb.auth.getSession();
+    if(!session){
+      const { data, error } = await sb.auth.signInAnonymously();
+      if(error){ console.warn('Connexion anonyme impossible', error); return; }
+      session = data.session;
+    }
+    currentUserId = session.user.id;
+    await loadRemotePosts();
+    sb.channel('public:publications')
+      .on('postgres_changes', {event:'*', schema:'public', table:'publications'}, () => { loadRemotePosts(); })
+      .subscribe();
+    sb.channel('public:confirmations')
+      .on('postgres_changes', {event:'*', schema:'public', table:'confirmations'}, () => { loadRemotePosts(); })
+      .subscribe();
+  }catch(e){ console.warn('Backend partagé indisponible, mode local uniquement', e); }
+}
+
+async function loadRemotePosts(){
+  if(!sb) return;
+  const { data, error } = await sb
+    .from('publications')
+    .select('*, confirmations(user_id)')
+    .order('created_at', {ascending:false});
+  if(error){ console.warn('Erreur chargement publications', error); return; }
+  const catMeta = {};
+  CATEGORIES.forEach(c => catMeta[c.id] = c);
+  remotePosts = (data||[]).map(row => {
+    const meta = catMeta[row.category_id] || {color:'#4FC3F7'};
+    const confirmCount = (row.confirmations||[]).length;
+    const cleared = confirmCount >= 2;
+    if(confirmCount>0 && (row.confirmations||[]).some(c=>c.user_id===currentUserId)) myConfirmedIds.add(row.id);
+    return {
+      id: row.id, remote:true,
+      name: row.author_name || 'Testeur Zapy', initial: (row.author_name||'T')[0].toUpperCase(),
+      color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
+      title: row.title, text: row.description || '—', photo: row.photo_url, audio:null,
+      likes:0, commentCount:0, liked:false, cat: row.category_id,
+      urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
+      comments:[]
+    };
+  });
+  renderPosts();
+}
+
+function timeAgo(iso){
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.round(diffMs/60000);
+  if(min < 1) return 'À l’instant';
+  if(min < 60) return 'Il y a ' + min + ' min';
+  const h = Math.round(min/60);
+  if(h < 24) return 'Il y a ' + h + 'h';
+  return 'Il y a ' + Math.round(h/24) + 'j';
+}
+
 let suggestions = [
   {id:'s1', name:'Anse d’Arlet', meta:'2,3 km', photo:'./assets/sugg_plage.png', fav:false},
   {id:'s2', name:'Marché de Fort-de-France', meta:'4,1 km', photo:'./assets/sugg_marche.png', fav:false},
@@ -867,7 +946,18 @@ const DURATION_HINTS = {
   'Élevée': '~2-4h',
   'Critique': 'durée indéterminée',
 };
-function confirmCleared(id){
+async function confirmCleared(id){
+  const remote = remotePosts.find(x=>String(x.id)===String(id));
+  if(remote){
+    if(remote.cleared || myConfirmedIds.has(remote.id)){ toast('Déjà confirmé par toi'); return; }
+    if(!sb || !currentUserId){ toast('Connexion au serveur en cours, réessaie dans un instant'); return; }
+    myConfirmedIds.add(remote.id);
+    const { error } = await sb.from('confirmations').insert({publication_id: remote.id, user_id: currentUserId});
+    if(error){ toast('Erreur, réessaie'); myConfirmedIds.delete(remote.id); return; }
+    toast('Confirmation envoyée, merci !');
+    await loadRemotePosts();
+    return;
+  }
   const p = posts.find(x=>x.id===id);
   if(!p || p.cleared) return;
   p.clearConfirms = (p.clearConfirms||0) + 1;
@@ -882,7 +972,8 @@ function confirmCleared(id){
 
 function renderPosts(){
   const list = document.getElementById('post-list');
-  const shown = activeCat==='toutes' ? posts : posts.filter(p=>p.cat===activeCat);
+  const combined = [...remotePosts, ...posts];
+  const shown = activeCat==='toutes' ? combined : combined.filter(p=>p.cat===activeCat);
   if(shown.length===0){
     list.innerHTML = '<div style="text-align:center; padding:30px 0; color:#90A4AE; font-size:13px;">Rien dans cette catégorie pour l’instant.</div>';
     return;
@@ -902,17 +993,18 @@ function renderPosts(){
         <div class="post-text">${p.text}</div>
         ${p.audio? `<audio controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;"></audio>` : ''}
         <div class="post-actions">
-          <div class="action ${p.liked?'liked':''}" onclick="toggleLike(${p.id})">${heartIcon(p.liked)}<span>${p.likes}</span></div>
-          <div class="action" onclick="openComments(${p.id})">${commentIcon}<span>${p.commentCount}</span></div>
+          <div class="action ${p.liked?'liked':''}" onclick="toggleLike('${p.id}')">${heartIcon(p.liked)}<span>${p.likes}</span></div>
+          <div class="action" onclick="openComments('${p.id}')">${commentIcon}<span>${p.commentCount}</span></div>
           <div class="action" onclick="toast('Partagé !')">${shareIcon}<span>Partager</span></div>
-          ${p.cat==='trafic' && !p.cleared ? `<div class="clear-btn" onclick="confirmCleared(${p.id})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E9E5B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>C'est dégagé ?</span></div>` : ''}
+          ${p.cat==='trafic' && !p.cleared ? `<div class="clear-btn" onclick="confirmCleared('${p.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E9E5B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>C'est dégagé ?</span></div>` : ''}
         </div>
       </div>
       ${p.photo? `<div class="post-photo"><img src="${p.photo}" alt=""></div>` : ''}
     </div>`).join('');
 }
 function toggleLike(id){
-  const p = posts.find(x=>x.id===id);
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(id));
+  if(!p) return;
   p.liked = !p.liked;
   p.likes += p.liked ? 1 : -1;
   renderPosts();
@@ -968,7 +1060,7 @@ function renderMapPins(containerId){
     <button type="button" class="map-pin" style="left:${p.left}%; top:${p.top}%;" onclick="pinInfo(event, ${i})" aria-label="${p.name}"></button>`).join('');
 }
 function renderComments(){
-  const p = posts.find(x=>x.id===openPostId);
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(openPostId));
   if(!p) return;
   document.getElementById('comments-title').textContent = p.commentCount + ' commentaire' + (p.commentCount>1?'s':'');
   const shown = p.comments || [];
@@ -986,7 +1078,8 @@ function submitComment(e){
   const input = document.getElementById('comment-input');
   const text = input.value.trim();
   if(!text) return;
-  const p = posts.find(x=>x.id===openPostId);
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(openPostId));
+  if(!p) return;
   p.comments = p.comments || [];
   p.comments.push({author:'Toi', text});
   p.commentCount++;
@@ -1154,19 +1247,36 @@ function removeAudio(){
     </label>`;
 }
 
-function handlePublish(e){
+async function handlePublish(e){
   e.preventDefault();
   const title = document.getElementById('f-title').value.trim();
   const desc = document.getElementById('f-desc').value.trim();
   if(!title){ toast('Ajoute un titre avant de publier'); return; }
   const cat = CATEGORIES.find(c=>c.id===selectedCat);
-  posts.unshift({
-    id: nextId++, name:'Toi', initial:'T', color:cat.color, verified:false,
-    time:'À l’instant', place:selectedCommune,
-    title: title, text: desc || '—',
-    photo: pendingPhoto, audio: pendingAudio, likes:0, commentCount:0, liked:false, cat: selectedCat, comments:[],
-    urgency: selectedCat==='trafic' ? selectedUrgency : null, cleared:false, clearConfirms:0
-  });
+  let publishedRemotely = false;
+  if(sb && currentUserId){
+    const { error } = await sb.from('publications').insert({
+      author_id: currentUserId,
+      author_name: myPseudo,
+      category_id: selectedCat,
+      title: title,
+      description: desc || null,
+      photo_url: pendingPhoto || null,
+      commune: selectedCommune,
+      urgency: selectedCat==='trafic' ? selectedUrgency : null,
+    });
+    if(error){ console.warn('Publication partagée échouée, repli local', error); }
+    else { publishedRemotely = true; await loadRemotePosts(); }
+  }
+  if(!publishedRemotely){
+    posts.unshift({
+      id: nextId++, name:'Toi', initial:'T', color:cat.color, verified:false,
+      time:'À l’instant', place:selectedCommune,
+      title: title, text: desc || '—',
+      photo: pendingPhoto, audio: pendingAudio, likes:0, commentCount:0, liked:false, cat: selectedCat, comments:[],
+      urgency: selectedCat==='trafic' ? selectedUrgency : null, cleared:false, clearConfirms:0
+    });
+  }
   const EMOJI_MAP = {trafic:'🚗', commerces:'🛒', evenements:'📅', communaute:'👥', bonsplans:'🌴', artiste:'🎨'};
   const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
   let pinLeft, pinTop;
@@ -1586,6 +1696,7 @@ renderMapPins('map-pins-thumb');
 renderMapPins('map-pins-full');
 document.getElementById('quick-wx-sub').textContent = WEATHER_NOW.temp + '°C · ' + WEATHER_NOW.place;
 document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' sentiers à découvrir';
+initBackend();
 </script>
 </body>
 </html>
