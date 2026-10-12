@@ -1,0 +1,1591 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Zapy — Prototype</title>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Zapy">
+<meta name="theme-color" content="#FF8A00">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Nunito+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --orange:#FF8A00; --orange-light:#FFD8A8; --sky:#4FC3F7; --navy:#0D47A1;
+    --sky-pale:#E3F6FF; --ink:#263238; --muted:#78909C; --line:#E3F6FF;
+    --bg-page:#DCE6ED; --surface:#FFFFFF; --surface-2:#F7FAFC; --overlay-dark:#10151B;
+  }
+  body[data-theme="dark"]{
+    --ink:#ECF3F8; --muted:#93A5B1; --line:#233240;
+    --bg-page:#080E15; --surface:#141F2A; --surface-2:#0E1620;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family:'Nunito Sans',system-ui,sans-serif; color:var(--ink);
+    background:var(--bg-page);
+    display:flex; justify-content:center; padding:24px 12px;
+    min-height:100vh; transition:background .2s;
+  }
+  .logo{font-family:'Baloo 2',sans-serif; font-weight:800;}
+  .logo .zap{color:var(--orange);} .logo .y{color:var(--sky);}
+  .phone{
+    width:100%; max-width:414px; background:var(--surface); border-radius:34px;
+    box-shadow:0 24px 60px rgba(13,71,161,0.22); overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+    border:6px solid var(--overlay-dark); height:860px; transition:background .2s;
+  }
+  .status{
+    flex-shrink:0; height:30px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 22px; font-size:13px; font-weight:700; background:var(--surface); color:var(--ink); z-index:20; position:relative;
+  }
+  .screen-area{flex-grow:1; overflow-y:auto; position:relative; background:var(--surface-2); -webkit-overflow-scrolling:touch;}
+  .screen{display:none; min-height:100%; padding-bottom:96px;}
+  .screen.active{display:block;}
+
+  /* Sur un vrai téléphone (écran étroit), l'appli remplit tout l'écran :
+     plus de cadre décoratif ni de fausse barre de statut — le téléphone
+     affiche déjà sa vraie heure / wifi / batterie au-dessus. */
+  @media (max-width: 480px){
+    body{padding:0; display:block; background:var(--surface);}
+    .phone{
+      width:100%; max-width:none; height:100vh; height:100dvh;
+      border-radius:0; border:none; box-shadow:none;
+      padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom);
+    }
+    .status{display:none;}
+    .bottom-nav{padding-bottom:calc(10px + env(safe-area-inset-bottom));}
+  }
+
+  /* ---- Accueil ---- */
+  #screen-accueil .head{padding:14px 18px 10px; position:relative; overflow:hidden; min-height:185px;}
+  #screen-accueil .head-row{display:flex; align-items:flex-start; justify-content:space-between; gap:10px;}
+  .hero-strip{
+    position:absolute; top:0; right:0; width:58%; height:100%;
+    overflow:hidden; z-index:0;
+  }
+  .hero-strip img{width:100%; height:100%; object-fit:cover; display:block;}
+  .hero-fade{position:absolute; inset:0; background:linear-gradient(90deg,var(--surface) 18%,rgba(255,255,255,0) 55%);}
+  .head-content{position:relative; z-index:1;}
+  .logo-row{font-size:26px; display:flex; align-items:center; gap:2px;}
+  .loc-pill{
+    display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--line); color:var(--ink);
+    padding:7px 12px; border-radius:20px; font-size:12.5px; font-weight:700; margin-top:6px; box-shadow:0 2px 8px rgba(13,71,161,0.08);
+  }
+  .tagline{color:var(--orange); font-style:italic; font-weight:700; font-size:13px; margin-top:10px; line-height:1.35; max-width:60%;}
+  .bell-btn{width:34px; height:34px; border-radius:50%; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; position:relative;}
+  .bell-dot{position:absolute; top:6px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--orange);}
+
+  .cat-row{display:flex; gap:12px; padding:16px 18px 6px; overflow-x:auto;}
+  .cat-item{flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:5px; cursor:pointer; opacity:0.55; transition:opacity .15s;}
+  .cat-item.active{opacity:1;}
+  .cat-ico{width:52px; height:52px; border-radius:16px; display:flex; align-items:center; justify-content:center; color:#fff;}
+  .cat-label{font-size:11px; font-weight:700;}
+
+  .section-head{display:flex; align-items:center; justify-content:space-between; padding:14px 18px 8px;}
+  .section-head h3{font-family:'Baloo 2',sans-serif; font-size:15.5px; font-weight:700;}
+  .see-all{font-size:12.5px; font-weight:700; color:var(--navy);}
+
+  .post-list{padding:0 18px; display:flex; flex-direction:column; gap:12px;}
+  .post-card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:12px; display:flex; gap:10px;}
+  .post-main{flex-grow:1; min-width:0;}
+  .post-top{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .avatar{width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:12px; flex-shrink:0;}
+  .post-name{font-weight:800; font-size:13px; display:flex; align-items:center; gap:4px;}
+  .post-meta{font-size:11px; color:var(--muted);}
+  .post-title{font-weight:800; font-size:13.5px; margin-bottom:2px;}
+  .post-text{font-size:12.5px; color:var(--muted); line-height:1.35; margin-bottom:8px;}
+  .post-actions{display:flex; align-items:center; gap:14px;}
+  .action{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted); cursor:pointer; user-select:none;}
+  .action svg{transition:transform .15s;}
+  .action.liked svg{transform:scale(1.15);}
+  .post-photo{width:104px; flex-shrink:0; border-radius:12px; overflow:hidden; height:104px;}
+  .post-photo img{width:100%; height:100%; object-fit:cover; display:block;}
+
+  /* ---- Carte ---- */
+  #screen-carte .topbar{display:flex; align-items:center; gap:10px; padding:14px 16px 10px;}
+  .icon-btn{width:36px; height:36px; border-radius:50%; background:var(--surface); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; color:var(--ink);}
+  .search-box{flex-grow:1; display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:10px 12px;}
+  .search-box input{border:none; outline:none; font-size:13px; flex-grow:1; font-family:inherit; color:var(--ink); background:transparent;}
+  .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative;}
+  .map-wrap img{width:100%; display:block;}
+  .locate-btn{position:absolute; right:12px; bottom:12px; width:38px; height:38px; border-radius:50%; background:var(--surface); box-shadow:0 4px 10px rgba(13,71,161,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .sugg-row{display:flex; gap:10px; padding:0 16px; overflow-x:auto;}
+  .sugg-card{flex-shrink:0; width:130px; border-radius:14px; overflow:hidden; background:var(--surface); border:1px solid var(--line); position:relative;}
+  .sugg-card img{width:100%; height:88px; object-fit:cover; display:block;}
+  .sugg-info{padding:8px 9px;}
+  .sugg-name{font-size:12px; font-weight:800;}
+  .sugg-meta{font-size:10.5px; color:var(--muted); display:flex; align-items:center; gap:3px; margin-top:2px;}
+  .fav-btn{position:absolute; top:7px; right:7px; width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,0.92); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .fav-btn.active svg{fill:var(--orange); stroke:var(--orange);}
+
+  /* ---- Publier ---- */
+  #screen-publier .form-head{display:flex; align-items:center; gap:12px; padding:16px 18px 6px;}
+  .form-body{padding:6px 18px 20px; display:flex; flex-direction:column; gap:20px;}
+  .field-label{font-size:11.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.3px; margin-bottom:9px;}
+  .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px;}
+  .cat-tile{display:flex; flex-direction:column; align-items:center; gap:5px; padding:10px 4px; border-radius:14px; background:var(--surface); border:1.5px solid var(--line); cursor:pointer;}
+  .cat-tile.selected{border-color:transparent; box-shadow:0 0 0 2px var(--orange) inset;}
+  .cat-tile .dot{width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:13px;}
+  .cat-tile span{font-size:10px; font-weight:700; text-align:center; color:var(--ink);}
+  input[type=text], textarea{
+    width:100%; padding:12px 13px; border-radius:12px; border:1px solid var(--line);
+    font-family:inherit; font-size:13.5px; color:var(--ink); background:var(--surface); outline:none;
+  }
+  textarea{resize:none;}
+  .photo-drop{width:100%; padding:20px; border-radius:12px; border:1.5px dashed #B3E0F5; background:var(--surface); display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; text-align:center;}
+  .photo-preview{width:100%; height:150px; border-radius:12px; overflow:hidden; position:relative;}
+  .photo-preview img{width:100%; height:100%; object-fit:cover; display:block;}
+  .photo-remove{position:absolute; top:8px; right:8px; width:26px; height:26px; border-radius:50%; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .loc-box{display:flex; align-items:center; justify-content:space-between; padding:12px 13px; border-radius:12px; border:1px solid var(--line); background:var(--surface);}
+  .urgency-row{display:flex; gap:6px;}
+  .urg-btn{flex-grow:1; text-align:center; padding:10px 0; border-radius:10px; border:1px solid var(--line); font-size:11.5px; font-weight:700; color:var(--muted); cursor:pointer; background:var(--surface);}
+  .urg-btn.selected{background:#FDECEA; border-color:#E5484D; border-width:2px; color:#E5484D;}
+  .submit-btn{width:100%; padding:15px; border-radius:14px; border:none; background:var(--orange); color:#fff; font-family:'Baloo 2',sans-serif; font-weight:700; font-size:15px; cursor:pointer;}
+  .submit-btn:active{transform:scale(0.98);}
+
+  /* ---- Nav ---- */
+  .bottom-nav{
+    position:absolute; left:0; right:0; bottom:0; height:78px; background:var(--surface); border-top:1px solid var(--line);
+    display:flex; align-items:center; justify-content:space-around; padding-bottom:10px; z-index:30;
+  }
+  .nav-item{display:flex; flex-direction:column; align-items:center; gap:3px; color:#90A4AE; cursor:pointer; background:none; border:none; font-family:inherit;}
+  .nav-item.active{color:var(--orange);}
+  .nav-item span{font-size:9.5px; font-weight:700;}
+  .nav-plus{margin-top:-24px;}
+  .nav-plus .circle{width:50px; height:50px; border-radius:50%; background:var(--orange); display:flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(255,138,0,0.4); border:4px solid var(--surface);}
+
+  .toast{
+    position:absolute; left:50%; bottom:96px; transform:translateX(-50%) translateY(20px); opacity:0;
+    background:var(--overlay-dark); color:#fff; padding:10px 18px; border-radius:20px; font-size:12.5px; font-weight:700;
+    z-index:50; transition:all .25s; pointer-events:none; white-space:nowrap;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  /* ---- Profil ---- */
+  .sub-head{display:flex; align-items:center; gap:12px; padding:16px 18px 6px;}
+  .sub-head .sub-title{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:16px; color:var(--ink);}
+  .profile-hero{display:flex; flex-direction:column; align-items:center; gap:10px; padding:22px 18px 18px;}
+  .profile-avatar{width:74px; height:74px; border-radius:50%; background:linear-gradient(135deg,var(--orange),var(--sky)); display:flex; align-items:center; justify-content:center; color:#fff; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:26px;}
+  .profile-name{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:17px; color:var(--ink);}
+  .profile-sub{font-size:12px; color:var(--muted);}
+  .stat-row{display:flex; gap:10px; padding:0 18px 18px;}
+  .stat-box{flex-grow:1; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:12px 6px; text-align:center;}
+  .stat-num{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:17px; color:var(--ink);}
+  .stat-label{font-size:10px; color:var(--muted); font-weight:700; margin-top:2px;}
+  .menu-list{padding:0 18px; display:flex; flex-direction:column; gap:8px;}
+  .menu-row{display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 14px; cursor:pointer;}
+  .menu-ico{width:36px; height:36px; border-radius:11px; display:flex; align-items:center; justify-content:center; color:#fff; flex-shrink:0;}
+  .menu-label{flex-grow:1; font-weight:800; font-size:13.5px; color:var(--ink);}
+  .menu-sub{font-size:11px; color:var(--muted); margin-top:1px;}
+  .switch{width:42px; height:24px; border-radius:14px; background:var(--line); position:relative; flex-shrink:0; transition:background .2s;}
+  .switch.on{background:var(--orange);}
+  .switch .knob{position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .2s; box-shadow:0 1px 3px rgba(0,0,0,0.3);}
+  .switch.on .knob{left:21px;}
+  .section-tag{padding:16px 18px 8px; font-size:11.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px;}
+
+  /* ---- Commerçant ---- */
+  .pricing-list{padding:6px 18px 20px; display:flex; flex-direction:column; gap:12px;}
+  .price-card{background:var(--surface); border:1.5px solid var(--line); border-radius:16px; padding:16px;}
+  .price-card.featured{border-color:var(--orange); box-shadow:0 6px 18px rgba(255,138,0,0.16);}
+  .price-top{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px;}
+  .price-name{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:15px; color:var(--ink);}
+  .price-amount{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:17px; color:var(--orange);}
+  .price-amount small{font-size:11px; font-weight:700; color:var(--muted);}
+  .price-feats{list-style:none; margin-top:10px; display:flex; flex-direction:column; gap:6px;}
+  .price-feats li{font-size:12px; color:var(--ink); display:flex; align-items:center; gap:7px;}
+  .price-btn{width:100%; margin-top:14px; padding:11px; border-radius:11px; border:1.5px solid var(--orange); background:transparent; color:var(--orange); font-weight:800; font-size:12.5px; cursor:pointer;}
+  .price-card.featured .price-btn{background:var(--orange); color:#fff;}
+  .sponsor-badge{display:inline-flex; align-items:center; gap:4px; background:var(--orange-light); color:#8A4B00; font-size:10px; font-weight:800; padding:3px 8px; border-radius:8px; margin-bottom:5px;}
+
+  /* ---- Artiste ---- */
+  .art-grid{padding:6px 18px 20px; display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
+  .art-tile{border-radius:14px; overflow:hidden; height:120px; display:flex; align-items:flex-end; padding:10px; color:#fff; font-weight:800; font-size:12px; position:relative;}
+  .art-tile::after{content:'';position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 40%,rgba(0,0,0,0.55) 100%);}
+  .art-tile span{position:relative; z-index:1;}
+
+  /* ---- Admin ---- */
+  .admin-list{padding:6px 18px 20px; display:flex; flex-direction:column; gap:10px;}
+  .admin-row{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:12px; display:flex; align-items:center; gap:10px;}
+  .admin-main{flex-grow:1; min-width:0;}
+  .admin-title{font-weight:800; font-size:13px; color:var(--ink);}
+  .admin-meta{font-size:11px; color:var(--muted); margin-top:1px;}
+  .admin-actions{display:flex; gap:6px; flex-shrink:0;}
+  .admin-btn{width:30px; height:30px; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .admin-btn.danger{border-color:#F5B5B0; background:#FDECEA;}
+
+  /* ---- Commentaires (overlay) ---- */
+  .comments-overlay{
+    position:absolute; inset:0; z-index:60; display:flex; align-items:flex-end;
+    background:rgba(0,0,0,0); pointer-events:none; transition:background .2s;
+  }
+  .comments-overlay.show{background:rgba(8,14,21,0.5); pointer-events:auto;}
+  #map-overlay > div{opacity:0; transform:scale(0.96); transition:all .2s; pointer-events:none;}
+  #map-overlay.show > div{opacity:1; transform:scale(1); pointer-events:auto;}
+  .map-pin{position:absolute; width:30px; height:30px; transform:translate(-50%,-55%); cursor:pointer; background:transparent; border:none; padding:0;}
+  .comments-sheet{
+    background:var(--surface); border-radius:22px 22px 0 0; width:100%; max-height:70%;
+    display:flex; flex-direction:column; transform:translateY(100%); transition:transform .25s;
+  }
+  .comments-overlay.show .comments-sheet{transform:translateY(0);}
+  .comments-head{display:flex; align-items:center; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); flex-shrink:0;}
+  .comments-head span{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:14.5px; color:var(--ink);}
+  .comments-list{overflow-y:auto; padding:10px 18px; display:flex; flex-direction:column; gap:12px;}
+  .comment-row{display:flex; gap:9px;}
+  .comment-author{font-size:12.5px; font-weight:800; color:var(--ink);}
+  .comment-text{font-size:12.5px; color:var(--ink); line-height:1.35;}
+  .comment-form{display:flex; gap:8px; padding:12px 18px; border-top:1px solid var(--line); flex-shrink:0;}
+  .comment-form input{flex-grow:1;}
+  .comment-send{width:40px; height:40px; border-radius:50%; background:var(--orange); border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0;}
+
+  /* ---- Notifications ---- */
+  .notif-row{display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
+  a.menu-row{color:inherit; text-decoration:none;}
+
+  /* ---- Accès rapide (Météo / Randonnée) ---- */
+  .quick-row{display:flex; gap:10px; padding:4px 18px 14px;}
+  .quick-tile{flex-grow:1; display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:12px 13px; cursor:pointer;}
+  .quick-ico{width:38px; height:38px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:19px; flex-shrink:0;}
+  .quick-main{min-width:0;}
+  .quick-title{font-weight:800; font-size:12.5px; color:var(--ink);}
+  .quick-sub{font-size:10.5px; color:var(--muted); margin-top:1px;}
+
+  /* ---- Météo ---- */
+  .weather-hero{margin:4px 18px 16px; border-radius:18px; padding:22px 18px; background:linear-gradient(135deg,#4FC3F7,#0D47A1); color:#fff; display:flex; align-items:center; justify-content:space-between;}
+  .weather-temp{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:40px;}
+  .weather-cond{font-size:12.5px; font-weight:700; margin-top:4px; max-width:170px; line-height:1.3;}
+  .weather-place{font-size:11px; opacity:0.85; margin-top:6px;}
+  .weather-icon{font-size:52px;}
+  .weather-alert{margin:0 18px 14px; display:flex; align-items:flex-start; gap:10px; background:#FFF8E1; border:1px solid #FFE08A; border-radius:14px; padding:12px 13px; font-size:12px; color:#8A6D00; line-height:1.35;}
+  .forecast-row{display:flex; gap:10px; padding:0 18px; overflow-x:auto;}
+  .forecast-day{flex-shrink:0; width:64px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:12px 6px; text-align:center;}
+  .forecast-day .d-name{font-size:10.5px; font-weight:800; color:var(--muted);}
+  .forecast-day .d-icon{font-size:20px; margin:6px 0;}
+  .forecast-day .d-temp{font-size:11px; font-weight:700; color:var(--ink);}
+  .forecast-day .d-temp small{color:var(--muted); font-weight:600;}
+
+  /* ---- Météo communauté ---- */
+  .wx-share-btn{display:flex; align-items:center; gap:5px; font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;}
+  .wx-form{margin:0 18px 16px; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px;}
+  .wx-cond-row{display:flex; gap:8px; margin:8px 0 2px;}
+  .wx-cond-opt{flex:1; text-align:center; font-size:22px; padding:8px 0; border-radius:12px; border:2px solid var(--line); cursor:pointer; background:var(--bg);}
+  .wx-cond-opt.selected{border-color:#4FC3F7; background:#E3F4FD;}
+  .wx-reports-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 18px 22px;}
+  .wx-report-card{position:relative; border-radius:14px; overflow:hidden; aspect-ratio:1/1; background:var(--line);}
+  .wx-report-card img{width:100%; height:100%; object-fit:cover; display:block;}
+  .wx-report-info{position:absolute; left:0; right:0; bottom:0; padding:8px 9px; background:linear-gradient(transparent, rgba(0,0,0,0.65)); color:#fff;}
+  .wx-report-place{font-size:11.5px; font-weight:800;}
+  .wx-report-time{font-size:10px; opacity:0.85;}
+  .wx-report-emoji{position:absolute; top:7px; right:7px; font-size:18px; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4));}
+
+  /* ---- Durée trafic / dégagé ---- */
+  .duration-badge{display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; color:#B9700B; margin-top:1px;}
+  .clear-btn{display:flex; align-items:center; gap:4px; font-size:12px; color:#2E9E5B; cursor:pointer; user-select:none;}
+  .cleared-banner{display:flex; align-items:center; gap:6px; background:#E3F6E8; color:#1B7A43; font-size:11.5px; font-weight:800; padding:7px 10px; border-radius:10px; margin-bottom:8px;}
+  .post-card.cleared{opacity:0.72;}
+
+  /* ---- Randonnée ---- */
+  .trail-list{padding:6px 18px 20px; display:flex; flex-direction:column; gap:12px;}
+  .trail-card{background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:13px; display:flex; gap:12px; cursor:pointer;}
+  .trail-ico{width:44px; height:44px; border-radius:13px; background:var(--sky-pale); display:flex; align-items:center; justify-content:center; font-size:21px; flex-shrink:0;}
+  .trail-main{flex-grow:1; min-width:0;}
+  .trail-name{font-weight:800; font-size:13.5px; color:var(--ink);}
+  .trail-place{font-size:11px; color:var(--muted); margin-top:1px;}
+  .trail-meta{display:flex; gap:10px; margin-top:7px; flex-wrap:wrap;}
+  .trail-badge{font-size:10px; font-weight:800; padding:3px 8px; border-radius:8px;}
+  .trail-chip{font-size:10.5px; color:var(--muted); display:flex; align-items:center; gap:3px;}
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="status">
+    <span>9:41</span>
+    <div style="display:flex; gap:5px; align-items:center;">
+      <svg width="17" height="11" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="0.5"/><rect x="5" y="5" width="3" height="7" rx="0.5"/><rect x="10" y="3" width="3" height="9" rx="0.5"/><rect x="15" y="0" width="3" height="12" rx="0.5"/></svg>
+      <svg width="15" height="11" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1 4a10 10 0 0 1 14 0"/><path d="M3.5 7a6.5 6.5 0 0 1 9 0"/><path d="M6 10a3 3 0 0 1 4 0"/></svg>
+      <svg width="24" height="11" viewBox="0 0 25 12" fill="none" stroke="currentColor"><rect x="0.5" y="0.5" width="21" height="11" rx="2.5"/><rect x="2" y="2" width="15" height="8" rx="1.3" fill="currentColor" stroke="none"/><rect x="22.5" y="4" width="2" height="4" rx="1" fill="currentColor" stroke="none"/></svg>
+    </div>
+  </div>
+
+  <div class="screen-area" id="screen-area">
+
+    <!-- ACCUEIL -->
+    <section class="screen active" id="screen-accueil">
+      <div class="head">
+        <div class="hero-strip"><img src="./assets/hero.png" alt=""><div class="hero-fade"></div></div>
+        <div class="head-content">
+          <div class="head-row">
+            <div>
+              <div class="logo-row logo"><span class="zap">Zap</span><span class="y">y</span></div>
+              <div class="loc-pill">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0D47A1" stroke-width="2.4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                Martinique
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+            </div>
+            <div class="bell-btn" onclick="toast('Pas de nouvelle notification pour l’instant')">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              <div class="bell-dot"></div>
+            </div>
+          </div>
+          <div class="tagline">On partage, on informe,<br>on s'entraide !</div>
+        </div>
+      </div>
+
+      <div class="cat-row" id="cat-row"></div>
+
+      <div class="quick-row">
+        <div class="quick-tile" onclick="showScreen('meteo')">
+          <div class="quick-ico" style="background:#E3F6FF;">☀️</div>
+          <div class="quick-main"><div class="quick-title">Météo</div><div class="quick-sub" id="quick-wx-sub">—</div></div>
+        </div>
+        <div class="quick-tile" onclick="showScreen('randonnee')">
+          <div class="quick-ico" style="background:#E8F5E9;">🥾</div>
+          <div class="quick-main"><div class="quick-title">Randonnée</div><div class="quick-sub" id="quick-trail-sub">—</div></div>
+        </div>
+      </div>
+
+      <div class="section-head"><h3>Publications récentes</h3><span class="see-all" onclick="toast('Fil complet — à venir')" style="cursor:pointer;">Voir tout ›</span></div>
+      <div class="post-list" id="post-list"></div>
+    </section>
+
+    <!-- CARTE -->
+    <section class="screen" id="screen-carte">
+      <div class="topbar">
+        <div class="icon-btn" onclick="toast('Recherche — à venir')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="Rechercher un lieu, un événement…" oninput="filterSuggestions(this.value)">
+        </div>
+        <div class="icon-btn" onclick="toast('Filtres avancés — à venir')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/><circle cx="6" cy="12" r="1.6" fill="#FF8A00" stroke="none"/><circle cx="10" cy="18" r="1.6" fill="#FF8A00" stroke="none"/></svg></div>
+      </div>
+      <div class="map-wrap" onclick="openMapView()">
+        <img src="./assets/map.png" alt="Carte de la Martinique">
+        <div id="map-pins-thumb" style="position:absolute; inset:0;"></div>
+        <div class="locate-btn" onclick="event.stopPropagation(); toast('Localisation en cours…')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
+        </div>
+      </div>
+      <div class="section-head"><h3>Suggestions du moment</h3><span class="see-all" onclick="toast('Liste complète — à venir')" style="cursor:pointer;">Voir tout ›</span></div>
+      <div class="sugg-row" id="sugg-row"></div>
+      <div style="height:14px;"></div>
+    </section>
+
+    <!-- PUBLIER -->
+    <section class="screen" id="screen-publier">
+      <div class="form-head">
+        <div class="icon-btn" onclick="showScreen('accueil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div id="publish-title" style="font-family:'Baloo 2',sans-serif; font-weight:700; font-size:16px; color:var(--ink);">Nouveau signalement</div>
+      </div>
+      <form class="form-body" id="publish-form" onsubmit="handlePublish(event)">
+        <div>
+          <div class="field-label">Catégorie</div>
+          <div class="cat-grid" id="cat-grid"></div>
+        </div>
+        <div>
+          <label class="field-label" for="f-title">Titre</label>
+          <input type="text" id="f-title" placeholder="Ex : accident sur la RN1" required>
+        </div>
+        <div>
+          <label class="field-label" for="f-desc">Description</label>
+          <textarea id="f-desc" rows="3" placeholder="Que se passe-t-il exactement ?"></textarea>
+        </div>
+        <div>
+          <div class="field-label">Photo</div>
+          <div id="photo-zone">
+            <label class="photo-drop" for="f-photo">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
+            </label>
+            <input type="file" id="f-photo" accept="image/*" style="display:none" onchange="handlePhoto(event)">
+          </div>
+        </div>
+        <div id="audio-block" style="display:none;">
+          <div class="field-label">Extrait audio (optionnel)</div>
+          <div id="audio-zone">
+            <label class="photo-drop" for="f-audio">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter un extrait de ton morceau</span>
+            </label>
+            <input type="file" id="f-audio" accept="audio/*" style="display:none" onchange="handleAudio(event)">
+          </div>
+        </div>
+        <div>
+          <div class="field-label">Localisation</div>
+          <div class="loc-box" id="loc-box">
+            <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              <span id="loc-status">Localisation en cours…</span>
+            </div>
+            <span style="font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;" onclick="toggleManualLocation()">Modifier</span>
+          </div>
+          <div class="loc-box" id="loc-manual" style="display:none;">
+            <input type="text" id="f-commune" list="commune-list" placeholder="Ex : La Trinité" style="border:none; background:transparent; padding:0; flex-grow:1;" onkeydown="if(event.key==='Enter'){event.preventDefault(); confirmManualLocation();}">
+            <datalist id="commune-list">
+              <option value="Grand'Rivière"><option value="Basse-Pointe"><option value="Le Prêcheur">
+              <option value="Saint-Pierre"><option value="Le Carbet"><option value="Gros-Morne">
+              <option value="La Trinité"><option value="Sainte-Marie"><option value="Fort-de-France">
+              <option value="Le Lamentin"><option value="Les Trois-Îlets"><option value="Le Diamant">
+              <option value="Sainte-Luce"><option value="Le Marin">
+            </datalist>
+            <span style="font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;" onclick="confirmManualLocation()">OK</span>
+          </div>
+          <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné</div>
+        </div>
+        <div id="urgency-block" style="display:none;">
+          <div class="field-label">Niveau d'urgence</div>
+          <div class="urgency-row" id="urgency-row"></div>
+          <div style="font-size:11.5px; color:#78909C; margin-top:6px;">Sert à estimer la durée : un simple ralentissement se dégage vite, un accident peut bloquer plus longtemps.</div>
+        </div>
+        <button type="submit" class="submit-btn" id="publish-submit-btn">Publier le signalement</button>
+      </form>
+    </section>
+
+    <!-- PROFIL -->
+    <section class="screen" id="screen-profil">
+      <div class="profile-hero">
+        <div class="profile-avatar">T</div>
+        <div class="profile-name">Toi972</div>
+        <div class="profile-sub">Membre depuis septembre 2026 · Fort-de-France</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-box"><div class="stat-num" id="stat-pubs">0</div><div class="stat-label">Publications</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-confirms">0</div><div class="stat-label">Confirmations</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-favs">0</div><div class="stat-label">Favoris</div></div>
+      </div>
+
+      <div class="section-tag">Espaces</div>
+      <div class="menu-list">
+        <div class="menu-row" onclick="showScreen('commercant')">
+          <div class="menu-ico" style="background:#FF8A00"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9z"/><path d="M9 20v-6h6v6"/></svg></div>
+          <div><div class="menu-label">Espace commerçant</div><div class="menu-sub">Mettez votre commerce en avant</div></div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+        <div class="menu-row" onclick="showScreen('artiste')">
+          <div class="menu-ico" style="background:#8B5CF6"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20c1.4 0 2-1 2-2 0-.6-.3-1-.6-1.4-.3-.4-.6-.8-.6-1.3 0-1 .8-1.8 1.8-1.8H17a5 5 0 0 0 5-5c0-4.4-4.5-8.5-10-8.5z"/><circle cx="7.5" cy="10.5" r="1.2" fill="#fff" stroke="none"/><circle cx="11" cy="7" r="1.2" fill="#fff" stroke="none"/><circle cx="15.5" cy="8.5" r="1.2" fill="#fff" stroke="none"/></svg></div>
+          <div><div class="menu-label">Espace artiste</div><div class="menu-sub">Partagez créations et événements</div></div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+      </div>
+
+      <div class="section-tag">Préférences</div>
+      <div class="menu-list">
+        <div class="menu-row" onclick="toggleTheme()">
+          <div class="menu-ico" style="background:#455A64"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.5A8.5 8.5 0 1 1 11.5 3a7 7 0 0 0 9.5 9.5z"/></svg></div>
+          <div class="menu-label">Mode sombre</div>
+          <div class="switch" id="theme-switch"><div class="knob"></div></div>
+        </div>
+        <div class="menu-row" onclick="showScreen('notifications')">
+          <div class="menu-ico" style="background:#4FC3F7"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+          <div class="menu-label">Notifications</div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+        <div class="menu-row" onclick="toast('Aide & support — à venir')">
+          <div class="menu-ico" style="background:#78909C"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 3.5"/><circle cx="12" cy="17" r="0.6" fill="#fff" stroke="none"/></svg></div>
+          <div class="menu-label">Aide &amp; support</div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+      </div>
+
+      <div class="section-tag">Réservé à l'équipe Zapy (démo)</div>
+      <div style="padding:0 18px 4px; font-size:11px; color:var(--muted); line-height:1.35;">
+        Dans l'app réelle, cet accès sera protégé par une connexion admin séparée — un utilisateur normal ne le verra jamais.
+      </div>
+      <div class="menu-list">
+        <div class="menu-row" onclick="showScreen('admin')">
+          <div class="menu-ico" style="background:#263238"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+          <div><div class="menu-label">Administration</div><div class="menu-sub">Utilisateurs, abonnements, facturation, modération</div></div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+      </div>
+      <div style="height:10px;"></div>
+    </section>
+
+    <!-- ESPACE COMMERÇANT -->
+    <section class="screen" id="screen-commercant">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Espace commerçant</div>
+      </div>
+      <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
+        Mettez votre commerce en avant auprès de toute la Martinique. Vos publications sponsorisées apparaissent en priorité dans le fil et sur la carte.
+      </div>
+      <div class="pricing-list">
+        <div class="price-card">
+          <div class="price-top"><span class="price-name">Découverte</span><span class="price-amount">29€<small>/mois</small></span></div>
+          <ul class="price-feats">
+            <li>1 publication sponsorisée active</li>
+            <li>Badge « Sponsorisé »</li>
+            <li>Visible dans votre commune</li>
+          </ul>
+          <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
+        </div>
+        <div class="price-card featured">
+          <div class="price-top"><span class="price-name">Visibilité</span><span class="price-amount">59€<small>/mois</small></span></div>
+          <ul class="price-feats">
+            <li>3 publications sponsorisées actives</li>
+            <li>Mise en avant sur la carte</li>
+            <li>Visible dans toute la Martinique</li>
+            <li>Statistiques de vues</li>
+          </ul>
+          <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
+        </div>
+        <div class="price-card">
+          <div class="price-top"><span class="price-name">Partenaire</span><span class="price-amount">99€<small>/mois</small></span></div>
+          <ul class="price-feats">
+            <li>Publications illimitées</li>
+            <li>Badge « Commerce vérifié »</li>
+            <li>Notifications push aux abonnés</li>
+          </ul>
+          <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
+        </div>
+      </div>
+      <div class="section-tag">Aperçu dans le fil</div>
+      <div class="post-list" style="padding-bottom:20px;">
+        <div class="post-card">
+          <div class="post-main">
+            <span class="sponsor-badge">★ Sponsorisé</span>
+            <div class="post-title">-20% sur toute la carte ce mois-ci</div>
+            <div class="post-text">Restaurant Le Ti’Kréol — Fort-de-France</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESPACE ARTISTE -->
+    <section class="screen" id="screen-artiste">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Espace artiste</div>
+      </div>
+      <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
+        Partagez vos créations, concerts et expositions avec toute la communauté Zapy — une photo de votre tableau, un extrait de votre morceau, ou les deux.
+      </div>
+      <div style="padding:14px 18px 0;">
+        <button type="button" class="submit-btn" onclick="showScreen('publier'); selectFormCat('artiste');">+ Publier une création</button>
+      </div>
+      <div class="section-tag">Vos publications</div>
+      <div class="art-grid">
+        <div class="art-tile" style="background:linear-gradient(135deg,#8B5CF6,#EC4899)"><span>Exposition — Le Marin</span></div>
+        <div class="art-tile" style="background:linear-gradient(135deg,#FF8A00,#FFD8A8)"><span>Concert — Schoelcher</span></div>
+        <div class="art-tile" style="background:linear-gradient(135deg,#4FC3F7,#0D47A1)"><span>Atelier peinture</span></div>
+        <div class="art-tile" style="background:linear-gradient(135deg,#2E9E5B,#4FC3F7)"><span>Marché artisanal</span></div>
+      </div>
+    </section>
+
+    <!-- ADMINISTRATION -->
+    <section class="screen" id="screen-admin">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Administration</div>
+      </div>
+
+      <div class="stat-row">
+        <div class="stat-box"><div class="stat-num" id="adm-users">0</div><div class="stat-label">Utilisateurs</div></div>
+        <div class="stat-box"><div class="stat-num" id="adm-pubs">0</div><div class="stat-label">Publications actives</div></div>
+        <div class="stat-box"><div class="stat-num" id="adm-revenue">0€</div><div class="stat-label">Revenus / mois</div></div>
+      </div>
+
+      <div class="section-tag">Abonnements commerçants</div>
+      <div class="admin-list" id="admin-merchants"></div>
+
+      <div class="section-tag">Utilisateurs</div>
+      <div class="admin-list" id="admin-users"></div>
+
+      <div class="section-tag">Modération des publications</div>
+      <div style="padding:0 18px 8px; font-size:12.5px; color:var(--muted);" id="admin-count"></div>
+      <div class="admin-list" id="admin-list" style="padding-top:0;"></div>
+
+      <div class="section-tag">Besoin d'aide sur l'app ?</div>
+      <div class="menu-list" style="padding-bottom:20px;">
+        <a href="https://wa.me/33646266432?text=Bonjour%2C%20j%27ai%20une%20question%20sur%20l%27app%20Zapy" target="_blank" class="menu-row">
+          <div class="menu-ico" style="background:#25D366"><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M17.5 14.4c-.3-.1-1.7-.8-1.9-.9-.3-.1-.5-.1-.7.1s-.8.9-.9 1.1-.3.2-.6.1c-.3-.1-1.2-.4-2.3-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6l.4-.5c.1-.1.2-.3.2-.4.1-.1 0-.3 0-.4S9.7 8 9.5 7.5c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.3c.1.2 1.6 2.5 3.9 3.5.5.2.9.4 1.3.5.5.2 1 .1 1.4.1.4-.1 1.3-.5 1.5-1s.2-.9.1-1c0-.1-.2-.2-.5-.3z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.1-1.3A10 10 0 1 0 12 2z"/></svg></div>
+          <div><div class="menu-label">Écrire sur WhatsApp</div><div class="menu-sub">Réponse rapide, pour une question urgente</div></div>
+          <span style="color:var(--muted)">›</span>
+        </a>
+        <a href="mailto:contact@nandemservice.com?subject=Question%20%E2%80%94%20app%20Zapy" target="_blank" class="menu-row">
+          <div class="menu-ico" style="background:#4FC3F7"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></div>
+          <div><div class="menu-label">Envoyer un email</div><div class="menu-sub">contact@nandemservice.com</div></div>
+          <span style="color:var(--muted)">›</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- NOTIFICATIONS -->
+    <section class="screen" id="screen-notifications">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Notifications</div>
+      </div>
+      <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
+        Choisis les catégories pour lesquelles tu veux être notifié à proximité.
+      </div>
+      <div class="menu-list" id="notif-list" style="padding-top:12px; padding-bottom:20px;"></div>
+    </section>
+
+    <!-- MESSAGES -->
+    <section class="screen" id="screen-messages">
+      <div class="sub-head">
+        <div class="sub-title">Messages</div>
+      </div>
+      <div class="menu-list" style="padding-bottom:20px;">
+        <div class="menu-row" onclick="toast('Conversation — à venir')">
+          <div class="avatar" style="background:#FF8A00;">T</div>
+          <div style="flex-grow:1; min-width:0;">
+            <div class="menu-label">Titou972</div>
+            <div class="menu-sub">Merci pour l'info sur la RN1, ça a bien bougé après</div>
+          </div>
+          <span style="font-size:10.5px; color:var(--muted); flex-shrink:0;">5h</span>
+        </div>
+        <div class="menu-row" onclick="toast('Conversation — à venir')">
+          <div class="avatar" style="background:#0D9488;">K</div>
+          <div style="flex-grow:1; min-width:0;">
+            <div class="menu-label">KaruArt972</div>
+            <div class="menu-sub">L'expo commence à 18h, entrée libre !</div>
+          </div>
+          <span style="font-size:10.5px; color:var(--muted); flex-shrink:0;">1h</span>
+        </div>
+        <div class="menu-row" onclick="toast('Conversation — à venir')">
+          <div class="avatar" style="background:#4FC3F7;">L</div>
+          <div style="flex-grow:1; min-width:0;">
+            <div class="menu-label">Léa972</div>
+            <div class="menu-sub">Magnifique photo, tu l'as prise où exactement ?</div>
+          </div>
+          <span style="font-size:10.5px; color:var(--muted); flex-shrink:0;">2h</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- MÉTÉO -->
+    <section class="screen" id="screen-meteo">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('accueil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Météo — Martinique</div>
+      </div>
+      <div class="weather-hero">
+        <div>
+          <div class="weather-temp" id="wx-temp">—</div>
+          <div class="weather-cond" id="wx-cond"></div>
+          <div class="weather-place" id="wx-place"></div>
+        </div>
+        <div class="weather-icon" id="wx-icon">⛅</div>
+      </div>
+      <div class="weather-alert" id="wx-alert" style="display:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A6D00" stroke-width="2" style="flex-shrink:0; margin-top:1px;"><path d="M12 9v4"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.6 3.9a2 2 0 0 0-3.4 0z"/><circle cx="12" cy="16.5" r="0.6" fill="#8A6D00" stroke="none"/></svg>
+        <span id="wx-alert-text"></span>
+      </div>
+      <div class="stat-row">
+        <div class="stat-box"><div class="stat-num" id="wx-humidity">—</div><div class="stat-label">Humidité</div></div>
+        <div class="stat-box"><div class="stat-num" id="wx-wind">—</div><div class="stat-label">Vent</div></div>
+        <div class="stat-box"><div class="stat-num" id="wx-uv">—</div><div class="stat-label">Indice UV</div></div>
+      </div>
+      <div class="section-head"><h3>Prévisions 5 jours</h3></div>
+      <div class="forecast-row" id="forecast-row" style="padding-bottom:24px;"></div>
+
+      <div class="section-head">
+        <h3>Météo par la communauté</h3>
+        <div class="wx-share-btn" onclick="toggleWxForm()" id="wx-share-toggle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Partager</span>
+        </div>
+      </div>
+      <div class="wx-form" id="wx-form" style="display:none;">
+        <div class="field-label">Ta photo du temps</div>
+        <div id="wx-photo-zone">
+          <label class="photo-drop" for="f-wx-photo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
+          </label>
+        </div>
+        <input type="file" accept="image/*" id="f-wx-photo" style="display:none;" onchange="handleWxPhoto(event)">
+        <div class="field-label" style="margin-top:12px;">Ça ressemble à quoi chez toi ?</div>
+        <div class="wx-cond-row" id="wx-cond-row"></div>
+        <div class="field-label" style="margin-top:12px;">Ta position</div>
+        <input type="text" id="f-wx-commune" list="commune-list" placeholder="Ex : Le Marin" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;">
+        <button type="button" class="submit-btn" style="width:100%; margin-top:12px;" onclick="publishWxReport()">Publier ma météo</button>
+      </div>
+      <div class="wx-reports-grid" id="wx-reports"></div>
+    </section>
+
+    <!-- RANDONNÉE -->
+    <section class="screen" id="screen-randonnee">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('accueil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Randonnée en Martinique</div>
+      </div>
+      <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
+        Les plus beaux sentiers de l'île, avec niveau de difficulté et durée estimée. Touche un sentier pour voir le détail.
+      </div>
+      <div class="trail-list" id="trail-list"></div>
+
+      <div class="section-head">
+        <h3>Photos de la communauté</h3>
+        <div class="wx-share-btn" onclick="toggleHikeForm()" id="hike-share-toggle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Partager</span>
+        </div>
+      </div>
+      <div class="wx-form" id="hike-form" style="display:none;">
+        <div class="field-label">Ta photo du sentier</div>
+        <div id="hike-photo-zone">
+          <label class="photo-drop" for="f-hike-photo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
+          </label>
+        </div>
+        <input type="file" accept="image/*" id="f-hike-photo" style="display:none;" onchange="handleHikePhoto(event)">
+        <div class="field-label" style="margin-top:12px;">Quel sentier ?</div>
+        <select id="f-hike-trail" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;"></select>
+        <div class="field-label" style="margin-top:12px;">Comment c'était ?</div>
+        <div class="wx-cond-row" id="hike-cond-row"></div>
+        <button type="button" class="submit-btn" style="width:100%; margin-top:12px;" onclick="publishHikeReport()">Publier ma photo</button>
+      </div>
+      <div class="wx-reports-grid" id="hike-reports"></div>
+    </section>
+
+  </div>
+
+  <!-- CARTE PLEIN ÉCRAN -->
+  <div class="comments-overlay" id="map-overlay" onclick="if(event.target===this) closeMapView()" style="align-items:center;">
+    <div style="width:100%; padding:0 16px;">
+      <div style="position:relative;">
+        <img src="./assets/map.png" alt="Carte de la Martinique" style="width:100%; border-radius:16px; display:block;">
+        <div id="map-pins-full" style="position:absolute; inset:0;"></div>
+      </div>
+      <button type="button" onclick="closeMapView()" style="margin:14px auto 0; display:block; padding:10px 20px; border-radius:20px; border:none; background:var(--surface); color:var(--ink); font-weight:700; font-size:13px; cursor:pointer;">Fermer</button>
+    </div>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-nav="accueil" onclick="showScreen('accueil')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg>
+      <span>Accueil</span>
+    </button>
+    <button class="nav-item" data-nav="carte" onclick="showScreen('carte')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2z"/><line x1="9" y1="3" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="21"/></svg>
+      <span>Carte</span>
+    </button>
+    <button class="nav-item nav-plus" data-nav="publier" onclick="showScreen('publier'); selectFormCat('trafic');">
+      <span class="circle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+    </button>
+    <button class="nav-item" data-nav="messages" onclick="showScreen('messages')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Messages</span>
+    </button>
+    <button class="nav-item" data-nav="profil" onclick="showScreen('profil')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      <span>Profil</span>
+    </button>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="comments-overlay" id="comments-overlay" onclick="if(event.target===this) closeComments()">
+    <div class="comments-sheet">
+      <div class="comments-head">
+        <span id="comments-title">Commentaires</span>
+        <div class="icon-btn" onclick="closeComments()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div class="comments-list" id="comments-list"></div>
+      <form class="comment-form" id="comment-form" onsubmit="submitComment(event)">
+        <input type="text" id="comment-input" placeholder="Écrire un commentaire…">
+        <button type="submit" class="comment-send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+const CATEGORIES = [
+  {id:'trafic', label:'Trafic', color:'#FF8A00', icon:'car'},
+  {id:'commerces', label:'Commerces', color:'#4FC3F7', icon:'shop'},
+  {id:'evenements', label:'Événements', color:'#2E9E5B', icon:'calendar'},
+  {id:'communaute', label:'Communauté', color:'#EC4899', icon:'people'},
+  {id:'bonsplans', label:'Bons plans', color:'#8B5CF6', icon:'tag'},
+  {id:'artiste', label:'Artiste', color:'#0D9488', icon:'palette'},
+];
+
+const ICONS = {
+  car: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l2-6h14l2 6"/><path d="M3 13h18v4a1 1 0 0 1-1 1h-1a2 2 0 1 1-4 0H8a2 2 0 1 1-4 0H3a1 1 0 0 1-1-1v-3z"/></svg>',
+  shop: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1-5h16l1 5"/><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9z"/><path d="M9 20v-6h6v6"/></svg>',
+  calendar: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="16" y1="3" x2="16" y2="7"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
+  people: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/><circle cx="17.5" cy="8.5" r="2.4"/><path d="M15.5 14.5c2.6 0 5 1.9 5 5.5"/></svg>',
+  tag: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3H4a1 1 0 0 0-1 1v5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.83 0l4.59-4.59a2 2 0 0 0 0-2.83z"/><circle cx="7.5" cy="7.5" r="1.5" fill="#fff" stroke="none"/></svg>',
+  palette: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 0 20c1.4 0 2-1 2-2 0-.6-.3-1-.6-1.4-.3-.4-.6-.8-.6-1.3 0-1 .8-1.8 1.8-1.8H17a5 5 0 0 0 5-5c0-4.4-4.5-8.5-10-8.5z"/><circle cx="7.5" cy="10.5" r="1.3" fill="#fff" stroke="none"/><circle cx="11" cy="7" r="1.3" fill="#fff" stroke="none"/><circle cx="15.5" cy="8.5" r="1.3" fill="#fff" stroke="none"/></svg>',
+};
+
+let posts = [
+  {id:4, name:'KaruArt972', initial:'K', color:'#0D9488', verified:true, time:'Il y a 1h', place:'Le Marin',
+   title:'Exposition « Mangroves » ce week-end', text:"Peintures et sculptures sur le thème de la mangrove, entrée libre à la galerie du Marin.",
+   photo:null, likes:312, commentCount:18, liked:false, cat:'artiste',
+   comments:[{author:'Nadia972', text:'J’y serai, hâte de voir ça !'},{author:'Fabrice972', text:'Tu exposes aussi tes toiles sur bois ?'}]},
+  {id:3, name:'Nath972', initial:'N', color:'#EC4899', verified:false, time:'Il y a 8h', place:'Les Trois-Îlets',
+   title:'Festival des saveurs ce week-end !', text:"Rendez-vous sur la plage pour découvrir nos producteurs locaux !",
+   photo:'./assets/post_festival.png', likes:456, commentCount:63, liked:false, cat:'evenements',
+   comments:[{author:'Yannis972', text:'On y sera en famille, super initiative'},{author:'Sabrina972', text:'Il y aura des stands végétariens ?'},{author:'Doudou972', text:'Présent chaque année, jamais déçu'}]},
+  {id:2, name:'Titou972', initial:'T', color:'#FF8A00', verified:false, time:'Il y a 5h', place:'Le Lamentin',
+   title:'Bouchon sur la RN1', text:'Ralentissement entre Dillon et Chateauboeuf. Soyez prudents !',
+   photo:'./assets/post_traffic.png', likes:311, commentCount:47, liked:false, cat:'trafic', urgency:'Modérée', cleared:false, clearConfirms:0,
+   comments:[{author:'Wilfried972', text:'Confirmé, ça bouge plus depuis 20 min'},{author:'Océane972', text:'Merci pour l’info, je prends par Californie'}]},
+  {id:1, name:'Léa972', initial:'L', color:'#4FC3F7', verified:true, time:'Il y a 2h', place:'Fort-de-France',
+   title:'Un magnifique coucher de soleil ce soir', text:"À la Pointe du Bout ! 🧡",
+   photo:'./assets/post_sunset.png', likes:842, commentCount:96, liked:false, cat:'communaute',
+   comments:[{author:'Marion972', text:'Magnifique, merci du partage 😍'},{author:'Erwan972', text:'La Martinique est trop belle'},{author:'Priscilla972', text:'J’y étais aussi, incroyable ce soir'}]},
+];
+let nextId = 5;
+let activeCat = 'toutes';
+
+let suggestions = [
+  {id:'s1', name:'Anse d’Arlet', meta:'2,3 km', photo:'./assets/sugg_plage.png', fav:false},
+  {id:'s2', name:'Marché de Fort-de-France', meta:'4,1 km', photo:'./assets/sugg_marche.png', fav:false},
+  {id:'s3', name:'Festival des saveurs', meta:"Aujourd'hui · 18h", photo:'./assets/sugg_festival.png', fav:false},
+];
+
+function heartIcon(filled){
+  return filled
+    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="#FF8A00" stroke="#FF8A00" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>'
+    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></svg>';
+}
+const commentIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#607D8B" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-5.5A8.38 8.38 0 0 1 3.5 11 8.38 8.38 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z"/></svg>';
+const shareIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#607D8B" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"/><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"/></svg>';
+
+function renderCatRow(){
+  const row = document.getElementById('cat-row');
+  const all = [{id:'toutes', label:'Toutes', color:'#0D47A1', icon:null}, ...CATEGORIES];
+  row.innerHTML = all.map(c => `
+    <div class="cat-item ${activeCat===c.id?'active':''}" onclick="setCat('${c.id}')">
+      <div class="cat-ico" style="background:${c.color}">${c.icon? ICONS[c.icon] : '<svg width="20" height="20" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/></svg>'}</div>
+      <div class="cat-label">${c.label}</div>
+    </div>`).join('');
+}
+function setCat(id){ activeCat = id; renderCatRow(); renderPosts(); }
+
+const DURATION_HINTS = {
+  'Faible': '~30 min',
+  'Modérée': '~1-2h',
+  'Élevée': '~2-4h',
+  'Critique': 'durée indéterminée',
+};
+function confirmCleared(id){
+  const p = posts.find(x=>x.id===id);
+  if(!p || p.cleared) return;
+  p.clearConfirms = (p.clearConfirms||0) + 1;
+  if(p.clearConfirms >= 2){
+    p.cleared = true;
+    toast('Merci ! Signalé comme dégagé 🚦');
+  } else {
+    toast(`Confirmation enregistrée (${p.clearConfirms}/2)`);
+  }
+  renderPosts();
+}
+
+function renderPosts(){
+  const list = document.getElementById('post-list');
+  const shown = activeCat==='toutes' ? posts : posts.filter(p=>p.cat===activeCat);
+  if(shown.length===0){
+    list.innerHTML = '<div style="text-align:center; padding:30px 0; color:#90A4AE; font-size:13px;">Rien dans cette catégorie pour l’instant.</div>';
+    return;
+  }
+  list.innerHTML = shown.map(p => `
+    <div class="post-card ${p.cat==='trafic' && p.cleared ? 'cleared' : ''}">
+      <div class="post-main">
+        <div class="post-top">
+          <div class="avatar" style="background:${p.color}">${p.initial}</div>
+          <div>
+            <div class="post-name">${p.name} ${p.verified? '<svg width="12" height="12" viewBox="0 0 24 24" fill="#4FC3F7"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</div>
+            <div class="post-meta">${p.time} · ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? `<div class="duration-badge">⏱ Durée estimée ${DURATION_HINTS[p.urgency] || ''}</div>` : ''}</div>
+          </div>
+        </div>
+        ${p.cat==='trafic' && p.cleared ? `<div class="cleared-banner">✅ Circulation redevenue normale — confirmé par des utilisateurs</div>` : ''}
+        <div class="post-title">${p.title}</div>
+        <div class="post-text">${p.text}</div>
+        ${p.audio? `<audio controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;"></audio>` : ''}
+        <div class="post-actions">
+          <div class="action ${p.liked?'liked':''}" onclick="toggleLike(${p.id})">${heartIcon(p.liked)}<span>${p.likes}</span></div>
+          <div class="action" onclick="openComments(${p.id})">${commentIcon}<span>${p.commentCount}</span></div>
+          <div class="action" onclick="toast('Partagé !')">${shareIcon}<span>Partager</span></div>
+          ${p.cat==='trafic' && !p.cleared ? `<div class="clear-btn" onclick="confirmCleared(${p.id})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E9E5B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>C'est dégagé ?</span></div>` : ''}
+        </div>
+      </div>
+      ${p.photo? `<div class="post-photo"><img src="${p.photo}" alt=""></div>` : ''}
+    </div>`).join('');
+}
+function toggleLike(id){
+  const p = posts.find(x=>x.id===id);
+  p.liked = !p.liked;
+  p.likes += p.liked ? 1 : -1;
+  renderPosts();
+}
+
+/* ---- Commentaires ---- */
+let openPostId = null;
+function openComments(id){
+  openPostId = id;
+  document.getElementById('comment-form').style.display = 'flex';
+  renderComments();
+  document.getElementById('comments-overlay').classList.add('show');
+}
+function closeComments(){
+  document.getElementById('comments-overlay').classList.remove('show');
+  openPostId = null;
+}
+function openMapView(){ document.getElementById('map-overlay').classList.add('show'); }
+function closeMapView(){ document.getElementById('map-overlay').classList.remove('show'); }
+
+/* ---- Points sur la carte ---- */
+const MAP_PINS = [
+  {left:29.8, top:11.8, icon:'🍽️', name:'Restaurant Chez Fifine', place:'Le Prêcheur', desc:'Cuisine créole traditionnelle, terrasse avec vue sur la baie.', photo:null},
+  {left:52.8, top:17.6, icon:'🛒', name:'Marché couvert', place:'Sainte-Marie', desc:'Produits locaux, fruits et légumes frais tous les matins.', photo:null},
+  {left:43.3, top:42.0, icon:'👥', name:'Rencontre communautaire', place:'Gros-Morne', desc:'Réunion mensuelle des habitants du quartier.', photo:null},
+  {left:30.8, top:53.2, icon:'🌳', name:'Sentier nature', place:'Fort-de-France', desc:'Randonnée facile, 2h aller-retour, ombragée.', photo:null},
+  {left:70.1, top:48.5, icon:'📅', name:'Marché nocturne', place:'Le Lamentin', desc:'Tous les vendredis soirs, artisanat et street food.', photo:null},
+  {left:71.2, top:63.8, icon:'🚗', name:'Location de voiture', place:'Le Lamentin', desc:'Location courte et longue durée, dépôt à l’aéroport possible.', photo:null},
+  {left:44.6, top:72.8, icon:'🛏️', name:'Villa avec piscine', place:'Les Trois-Îlets', desc:'4 chambres, vue mer, disponible à la semaine.', photo:null},
+  {left:51.5, top:85.4, icon:'🌴', name:'Happy hour plage', place:'Le Diamant', desc:'Cocktails à moitié prix de 17h à 19h, tous les jours.', photo:null},
+  {left:74.4, top:77.9, icon:'📷', name:'Point de vue', place:'Le Marin', desc:'Meilleur spot pour photographier le coucher de soleil sur la baie.', photo:null},
+];
+let nextPinSlot = 0;
+const NEW_PIN_SLOTS = [{left:57, top:28}, {left:35, top:20}, {left:63, top:57}, {left:48, top:63}];
+
+function pinInfo(e, index){
+  e.stopPropagation();
+  const p = MAP_PINS[index];
+  document.getElementById('comments-title').textContent = p.icon + ' ' + p.name;
+  document.getElementById('comments-list').innerHTML = `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">📍 ${p.place}${p.isNew?' · <span style="color:var(--orange); font-weight:700;">Nouveau</span>':''}</div>
+    ${p.photo? `<div style="width:100%; height:150px; border-radius:12px; overflow:hidden; margin-bottom:10px;"><img src="${p.photo}" style="width:100%; height:100%; object-fit:cover; display:block;"></div>` : ''}
+    <div style="font-size:13px; color:var(--ink); line-height:1.4;">${p.desc || 'Aucune description pour l’instant.'}</div>
+  `;
+  document.getElementById('comment-form').style.display = 'none';
+  document.getElementById('comments-overlay').classList.add('show');
+}
+function renderMapPins(containerId){
+  const c = document.getElementById(containerId);
+  if(!c) return;
+  c.innerHTML = MAP_PINS.map((p, i) => `
+    ${p.isNew ? `<div style="position:absolute; left:${p.left}%; top:${p.top}%; transform:translate(-50%,-50%); width:28px; height:28px; border-radius:50%; background:${p.color||'#FF8A00'}; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:13px; pointer-events:none;">${p.icon}</div>` : ''}
+    <button type="button" class="map-pin" style="left:${p.left}%; top:${p.top}%;" onclick="pinInfo(event, ${i})" aria-label="${p.name}"></button>`).join('');
+}
+function renderComments(){
+  const p = posts.find(x=>x.id===openPostId);
+  if(!p) return;
+  document.getElementById('comments-title').textContent = p.commentCount + ' commentaire' + (p.commentCount>1?'s':'');
+  const shown = p.comments || [];
+  const extra = p.commentCount - shown.length;
+  document.getElementById('comments-list').innerHTML =
+    shown.map(c => `
+      <div class="comment-row">
+        <div class="avatar" style="background:#78909C; flex-shrink:0;">${c.author[0]}</div>
+        <div><div class="comment-author">${c.author}</div><div class="comment-text">${c.text}</div></div>
+      </div>`).join('')
+    + (extra>0 ? `<div style="text-align:center; padding:10px 0; font-size:11.5px; color:var(--muted);">et ${extra} autres commentaires</div>` : '');
+}
+function submitComment(e){
+  e.preventDefault();
+  const input = document.getElementById('comment-input');
+  const text = input.value.trim();
+  if(!text) return;
+  const p = posts.find(x=>x.id===openPostId);
+  p.comments = p.comments || [];
+  p.comments.push({author:'Toi', text});
+  p.commentCount++;
+  input.value = '';
+  renderComments();
+  renderPosts();
+}
+
+function renderSuggestions(filterText){
+  const row = document.getElementById('sugg-row');
+  const q = (filterText||'').trim().toLowerCase();
+  const shown = q ? suggestions.filter(s=>s.name.toLowerCase().includes(q)) : suggestions;
+  if(shown.length===0){
+    row.innerHTML = '<div style="padding:14px 4px; color:#90A4AE; font-size:12.5px;">Aucun résultat pour « '+filterText+' ».</div>';
+    return;
+  }
+  row.innerHTML = shown.map(s => `
+    <div class="sugg-card">
+      <img src="${s.photo}" alt="">
+      <div class="fav-btn ${s.fav?'active':''}" onclick="toggleFav('${s.id}')">${heartIcon(s.fav)}</div>
+      <div class="sugg-info">
+        <div class="sugg-name">${s.name}</div>
+        <div class="sugg-meta"><svg width="10" height="10" viewBox="0 0 24 24" fill="#90A4AE"><path d="M12 2C7 2 3 6 3 11c0 6 9 11 9 11s9-5 9-11c0-5-4-9-9-9z"/></svg>${s.meta}</div>
+      </div>
+    </div>`).join('');
+}
+function toggleFav(id){ const s = suggestions.find(x=>x.id===id); s.fav = !s.fav; renderSuggestions(document.getElementById('search-input').value); }
+function filterSuggestions(v){ renderSuggestions(v); }
+
+let selectedCat = 'trafic';
+const CAT_LABELS = {
+  trafic:      {title:'Nouveau signalement', verb:'Publier le signalement'},
+  commerces:   {title:'Nouvelle annonce',    verb:'Publier l’annonce'},
+  evenements:  {title:'Nouvel événement',    verb:'Publier l’événement'},
+  communaute:  {title:'Nouvelle publication',verb:'Publier'},
+  bonsplans:   {title:'Nouveau bon plan',    verb:'Publier le bon plan'},
+  artiste:     {title:'Nouvelle création',   verb:'Publier la création'},
+};
+function renderCatGrid(){
+  document.getElementById('cat-grid').innerHTML = CATEGORIES.map(c => `
+    <div class="cat-tile ${selectedCat===c.id?'selected':''}" onclick="selectFormCat('${c.id}')">
+      <div class="dot" style="background:${c.color}">${ICONS[c.icon]}</div>
+      <span>${c.label}</span>
+    </div>`).join('');
+}
+function selectFormCat(id){
+  selectedCat = id;
+  renderCatGrid();
+  document.getElementById('urgency-block').style.display = (id==='trafic') ? 'block' : 'none';
+  document.getElementById('audio-block').style.display = (id==='artiste') ? 'block' : 'none';
+  const lbl = CAT_LABELS[id] || CAT_LABELS.trafic;
+  document.getElementById('publish-title').textContent = lbl.title;
+  document.getElementById('publish-submit-btn').textContent = lbl.verb;
+}
+
+/* ---- Localisation ---- */
+const COMMUNE_COORDS = {
+  grandriviere:  {left:19.3, top:2.5,  label:"Grand'Rivière"},
+  bassepointe:   {left:42.6, top:5.5,  label:"Basse-Pointe"},
+  precheur:      {left:19.3, top:19.7, label:"Le Prêcheur"},
+  saintpierre:   {left:25.0, top:31.0, label:"Saint-Pierre"},
+  carbet:        {left:22.4, top:40.8, label:"Le Carbet"},
+  grosmorne:     {left:55.4, top:41.3, label:"Gros-Morne"},
+  trinite:       {left:62.8, top:31.0, label:"La Trinité"},
+  saintemarie:   {left:60.0, top:23.0, label:"Sainte-Marie"},
+  fortdefrance:  {left:43.0, top:59.7, label:"Fort-de-France"},
+  lamentin:      {left:57.9, top:58.6, label:"Le Lamentin"},
+  troisilets:    {left:33.0, top:78.7, label:"Les Trois-Îlets"},
+  diamant:       {left:38.8, top:88.2, label:"Le Diamant"},
+  sainteluce:    {left:61.6, top:87.7, label:"Sainte-Luce"},
+  marin:         {left:76.0, top:85.7, label:"Le Marin"},
+};
+function normalizeCommune(s){
+  return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/^(le |la |les |l')/,'').replace(/[^a-z]/g,'');
+}
+let selectedCommune = 'Fort-de-France';
+let locTimer;
+function simulateLocate(){
+  document.getElementById('loc-manual').style.display = 'none';
+  document.getElementById('loc-box').style.display = 'flex';
+  document.getElementById('loc-status').textContent = 'Localisation en cours…';
+  document.getElementById('loc-detail').textContent = 'Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné';
+  clearTimeout(locTimer);
+  locTimer = setTimeout(()=>{
+    selectedCommune = 'Fort-de-France';
+    document.getElementById('loc-status').textContent = 'Position détectée';
+    document.getElementById('loc-detail').textContent = selectedCommune + ' (détection automatique)';
+  }, 900);
+}
+function toggleManualLocation(){
+  clearTimeout(locTimer);
+  document.getElementById('loc-box').style.display = 'none';
+  document.getElementById('loc-manual').style.display = 'flex';
+  document.getElementById('f-commune').value = selectedCommune;
+  document.getElementById('f-commune').focus();
+}
+function confirmManualLocation(){
+  const val = document.getElementById('f-commune').value.trim();
+  if(val) selectedCommune = val;
+  document.getElementById('loc-manual').style.display = 'none';
+  document.getElementById('loc-box').style.display = 'flex';
+  document.getElementById('loc-status').textContent = 'Position choisie';
+  document.getElementById('loc-detail').textContent = selectedCommune + ' (saisie manuelle)';
+}
+
+const URGENCY = ['Faible','Modérée','Élevée','Critique'];
+let selectedUrgency = 'Modérée';
+function renderUrgency(){
+  document.getElementById('urgency-row').innerHTML = URGENCY.map(u => `
+    <div class="urg-btn ${selectedUrgency===u?'selected':''}" onclick="selectedUrgency='${u}'; renderUrgency();">${u}</div>`).join('');
+}
+
+let pendingPhoto = null;
+function handlePhoto(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    pendingPhoto = ev.target.result;
+    document.getElementById('photo-zone').innerHTML = `
+      <div class="photo-preview">
+        <img src="${pendingPhoto}" alt="">
+        <div class="photo-remove" onclick="removePhoto()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </div>`;
+  };
+  reader.readAsDataURL(file);
+}
+function removePhoto(){
+  pendingPhoto = null;
+  document.getElementById('f-photo').value = '';
+  document.getElementById('photo-zone').innerHTML = `
+    <label class="photo-drop" for="f-photo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
+    </label>`;
+}
+
+let pendingAudio = null;
+function handleAudio(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    pendingAudio = ev.target.result;
+    document.getElementById('audio-zone').innerHTML = `
+      <div style="display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 12px;">
+        <audio controls src="${pendingAudio}" style="flex-grow:1; height:36px; min-width:0;"></audio>
+        <div class="photo-remove" style="position:static; background:rgba(0,0,0,0.55); flex-shrink:0;" onclick="removeAudio()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </div>`;
+  };
+  reader.readAsDataURL(file);
+}
+function removeAudio(){
+  pendingAudio = null;
+  document.getElementById('f-audio').value = '';
+  document.getElementById('audio-zone').innerHTML = `
+    <label class="photo-drop" for="f-audio">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+      <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter un extrait de ton morceau</span>
+    </label>`;
+}
+
+function handlePublish(e){
+  e.preventDefault();
+  const title = document.getElementById('f-title').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  if(!title){ toast('Ajoute un titre avant de publier'); return; }
+  const cat = CATEGORIES.find(c=>c.id===selectedCat);
+  posts.unshift({
+    id: nextId++, name:'Toi', initial:'T', color:cat.color, verified:false,
+    time:'À l’instant', place:selectedCommune,
+    title: title, text: desc || '—',
+    photo: pendingPhoto, audio: pendingAudio, likes:0, commentCount:0, liked:false, cat: selectedCat, comments:[],
+    urgency: selectedCat==='trafic' ? selectedUrgency : null, cleared:false, clearConfirms:0
+  });
+  const EMOJI_MAP = {trafic:'🚗', commerces:'🛒', evenements:'📅', communaute:'👥', bonsplans:'🌴', artiste:'🎨'};
+  const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
+  let pinLeft, pinTop;
+  if(coord){
+    pinLeft = coord.left; pinTop = coord.top;
+  } else {
+    const slot = NEW_PIN_SLOTS[nextPinSlot % NEW_PIN_SLOTS.length];
+    nextPinSlot++;
+    pinLeft = slot.left; pinTop = slot.top;
+  }
+  MAP_PINS.push({
+    left: pinLeft, top: pinTop, icon: EMOJI_MAP[selectedCat] || '📍',
+    name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
+    photo: pendingPhoto, color: cat.color, isNew: true
+  });
+  renderMapPins('map-pins-thumb');
+  renderMapPins('map-pins-full');
+  activeCat = 'toutes';
+  renderCatRow();
+  renderPosts();
+  e.target.reset();
+  removePhoto();
+  removeAudio();
+  selectedCat = 'trafic'; renderCatGrid();
+  selectedUrgency = 'Modérée'; renderUrgency();
+  document.getElementById('urgency-block').style.display='none';
+  document.getElementById('audio-block').style.display='none';
+  toast('Signalement publié !');
+  showScreen('accueil');
+}
+
+function showScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','notifications'].includes(name))));
+  document.getElementById('screen-area').scrollTop = 0;
+  if(name==='profil') renderProfile();
+  if(name==='admin') renderAdmin();
+  if(name==='notifications') renderNotifPrefs();
+  if(name==='publier') simulateLocate();
+  if(name==='meteo'){ renderWeather(); renderWxReports(); }
+  if(name==='randonnee'){ renderTrails(); renderHikeReports(); }
+}
+
+/* ---- Météo ---- */
+const WEATHER_NOW = {temp:29, feels:32, icon:'⛅', condition:"Ensoleillé, quelques nuages", place:'Fort-de-France'};
+const FORECAST = [
+  {day:'Aujourd’hui', icon:'☀️', min:25, max:29},
+  {day:'Demain',      icon:'⛅', min:24, max:28},
+  {day:'Mer.',        icon:'🌦️', min:24, max:27},
+  {day:'Jeu.',        icon:'☀️', min:25, max:30},
+  {day:'Ven.',        icon:'⛈️', min:24, max:28},
+];
+const WEATHER_ALERT = 'Vigilance jaune — fortes pluies possibles cet après-midi sur le nord de l’île.';
+function renderWeather(){
+  document.getElementById('wx-temp').textContent = WEATHER_NOW.temp + '°';
+  document.getElementById('wx-icon').textContent = WEATHER_NOW.icon;
+  document.getElementById('wx-cond').textContent = WEATHER_NOW.condition;
+  document.getElementById('wx-place').textContent = WEATHER_NOW.place + ' · ressenti ' + WEATHER_NOW.feels + '°';
+  document.getElementById('wx-humidity').textContent = '74%';
+  document.getElementById('wx-wind').textContent = '18 km/h';
+  document.getElementById('wx-uv').textContent = 'Élevé';
+  const alertEl = document.getElementById('wx-alert');
+  if(WEATHER_ALERT){
+    document.getElementById('wx-alert-text').textContent = WEATHER_ALERT;
+    alertEl.style.display = 'flex';
+  } else { alertEl.style.display = 'none'; }
+  document.getElementById('forecast-row').innerHTML = FORECAST.map(f => `
+    <div class="forecast-day">
+      <div class="d-name">${f.day}</div>
+      <div class="d-icon">${f.icon}</div>
+      <div class="d-temp">${f.max}° <small>${f.min}°</small></div>
+    </div>`).join('');
+}
+
+/* ---- Météo communauté ---- */
+const WX_CONDITIONS = ['☀️','⛅','🌧️','⛈️','🌫️'];
+let selectedWxCondition = '☀️';
+let pendingWxPhoto = null;
+let wxFormOpen = false;
+let nextWxId = 100;
+let WEATHER_REPORTS = [
+  {id:1, photo:'./assets/post_sunset.png', place:'Sainte-Anne', time:'Il y a 20 min', emoji:'☀️'},
+  {id:2, photo:'./assets/sugg_plage.png', place:'Les Trois-Îlets', time:'Il y a 1h', emoji:'⛅'},
+];
+
+function toggleWxForm(){
+  wxFormOpen = !wxFormOpen;
+  document.getElementById('wx-form').style.display = wxFormOpen ? 'block' : 'none';
+  document.getElementById('wx-share-toggle').querySelector('span').textContent = wxFormOpen ? 'Fermer' : 'Partager';
+  if(wxFormOpen){
+    renderWxConditionPicker();
+    document.getElementById('f-wx-commune').value = selectedCommune || '';
+  }
+}
+function renderWxConditionPicker(){
+  document.getElementById('wx-cond-row').innerHTML = WX_CONDITIONS.map(c => `
+    <div class="wx-cond-opt ${selectedWxCondition===c?'selected':''}" onclick="selectedWxCondition='${c}'; renderWxConditionPicker();">${c}</div>`).join('');
+}
+function handleWxPhoto(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    pendingWxPhoto = ev.target.result;
+    document.getElementById('wx-photo-zone').innerHTML = `
+      <div class="photo-preview">
+        <img src="${pendingWxPhoto}" alt="">
+        <div class="photo-remove" onclick="removeWxPhoto()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </div>`;
+  };
+  reader.readAsDataURL(file);
+}
+function removeWxPhoto(){
+  pendingWxPhoto = null;
+  document.getElementById('f-wx-photo').value = '';
+  document.getElementById('wx-photo-zone').innerHTML = `
+    <label class="photo-drop" for="f-wx-photo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
+    </label>`;
+}
+function publishWxReport(){
+  const commune = document.getElementById('f-wx-commune').value.trim();
+  if(!pendingWxPhoto){ toast('Ajoute une photo avant de publier'); return; }
+  if(!commune){ toast('Indique ta position'); return; }
+  WEATHER_REPORTS.unshift({id: nextWxId++, photo: pendingWxPhoto, place: commune, time:'À l’instant', emoji: selectedWxCondition});
+  renderWxReports();
+  toggleWxForm();
+  pendingWxPhoto = null;
+  document.getElementById('f-wx-commune').value = '';
+  selectedWxCondition = '☀️';
+  removeWxPhoto();
+  toast('Météo partagée, merci !');
+}
+function renderWxReports(){
+  const el = document.getElementById('wx-reports');
+  if(!el) return;
+  if(WEATHER_REPORTS.length===0){
+    el.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Personne n’a encore partagé sa météo.</div>';
+    return;
+  }
+  el.innerHTML = WEATHER_REPORTS.map(r => `
+    <div class="wx-report-card">
+      <img src="${r.photo}" alt="">
+      <div class="wx-report-emoji">${r.emoji}</div>
+      <div class="wx-report-info">
+        <div class="wx-report-place">${r.place}</div>
+        <div class="wx-report-time">${r.time}</div>
+      </div>
+    </div>`).join('');
+}
+
+/* ---- Randonnée ---- */
+const TRAILS = [
+  {name:'Montagne Pelée', place:'Le Prêcheur / Grand-Rivière', difficulty:'Difficile', duration:'4h30 (A/R)', distance:'10,5 km', icon:'🌋',
+   desc:"L'ascension du volcan emblématique de la Martinique, 1397 m. Vue à 360° sur l'île par temps clair. Prévoir de bonnes chaussures et partir tôt le matin."},
+  {name:'Les Pitons du Carbet', place:'Le Carbet / Fort-de-France', difficulty:'Difficile', duration:'6h (A/R)', distance:'9 km', icon:'⛰️',
+   desc:'Randonnée sportive à travers la forêt tropicale humide, avec cordes et échelles sur certains passages. Réservée aux randonneurs expérimentés.'},
+  {name:'Canal de Beauregard', place:'Fort-de-France / Balata', difficulty:'Facile', duration:'2h (A/R)', distance:'5 km', icon:'🌿',
+   desc:"Marche le long d'un ancien canal d'irrigation, à flanc de falaise avec vue sur la vallée. Accessible en famille."},
+  {name:'Presqu’île de la Caravelle', place:'La Trinité', difficulty:'Modérée', duration:'3h (boucle)', distance:'7,8 km', icon:'🏖️',
+   desc:"Boucle côtière entre mangrove, savane et ruines du château Dubuc, avec vue sur l'Atlantique."},
+  {name:'Anses d’Arlet — sentier côtier', place:"Les Anses-d'Arlet", difficulty:'Facile', duration:'1h30 (A/R)', distance:'4 km', icon:'🌴',
+   desc:'Balade facile entre plages et criques, idéale en fin de journée pour profiter du coucher de soleil.'},
+  {name:'Rocher du Diamant — point de vue', place:'Le Diamant', difficulty:'Modérée', duration:'1h (A/R)', distance:'3 km', icon:'📍',
+   desc:'Montée vers un point de vue panoramique sur le rocher du Diamant et la côte sud.'},
+];
+function renderTrails(){
+  const badgeColor = {Facile:'#2E9E5B', 'Modérée':'#FF8A00', Difficile:'#E5484D'};
+  const badgeBg = {Facile:'#E3F6E8', 'Modérée':'#FFF1E0', Difficile:'#FDECEA'};
+  document.getElementById('trail-list').innerHTML = TRAILS.map((t,i) => `
+    <div class="trail-card" onclick="trailInfo(${i})">
+      <div class="trail-ico">${t.icon}</div>
+      <div class="trail-main">
+        <div class="trail-name">${t.name}</div>
+        <div class="trail-place">📍 ${t.place}</div>
+        <div class="trail-meta">
+          <span class="trail-badge" style="color:${badgeColor[t.difficulty]}; background:${badgeBg[t.difficulty]};">${t.difficulty}</span>
+          <span class="trail-chip">⏱ ${t.duration}</span>
+          <span class="trail-chip">📏 ${t.distance}</span>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+/* ---- Randonnée communauté ---- */
+const HIKE_CONDITIONS = ['🥾','🌳','💧','⚠️','🔥'];
+let selectedHikeCondition = '🥾';
+let pendingHikePhoto = null;
+let hikeFormOpen = false;
+let nextHikeId = 200;
+let HIKE_REPORTS = [
+  {id:1, photo:'./assets/hero.png', place:'Montagne Pelée', time:'Il y a 3h', emoji:'🌳'},
+  {id:2, photo:'./assets/sugg_marche.png', place:'Canal de Beauregard', time:'Hier', emoji:'🥾'},
+];
+
+function toggleHikeForm(){
+  hikeFormOpen = !hikeFormOpen;
+  document.getElementById('hike-form').style.display = hikeFormOpen ? 'block' : 'none';
+  document.getElementById('hike-share-toggle').querySelector('span').textContent = hikeFormOpen ? 'Fermer' : 'Partager';
+  if(hikeFormOpen){
+    renderHikeCondPicker();
+    document.getElementById('f-hike-trail').innerHTML = TRAILS.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+  }
+}
+function renderHikeCondPicker(){
+  document.getElementById('hike-cond-row').innerHTML = HIKE_CONDITIONS.map(c => `
+    <div class="wx-cond-opt ${selectedHikeCondition===c?'selected':''}" onclick="selectedHikeCondition='${c}'; renderHikeCondPicker();">${c}</div>`).join('');
+}
+function handleHikePhoto(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev){
+    pendingHikePhoto = ev.target.result;
+    document.getElementById('hike-photo-zone').innerHTML = `
+      <div class="photo-preview">
+        <img src="${pendingHikePhoto}" alt="">
+        <div class="photo-remove" onclick="removeHikePhoto()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </div>`;
+  };
+  reader.readAsDataURL(file);
+}
+function removeHikePhoto(){
+  pendingHikePhoto = null;
+  document.getElementById('f-hike-photo').value = '';
+  document.getElementById('hike-photo-zone').innerHTML = `
+    <label class="photo-drop" for="f-hike-photo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
+    </label>`;
+}
+function publishHikeReport(){
+  const trail = document.getElementById('f-hike-trail').value;
+  if(!pendingHikePhoto){ toast('Ajoute une photo avant de publier'); return; }
+  HIKE_REPORTS.unshift({id: nextHikeId++, photo: pendingHikePhoto, place: trail, time:'À l’instant', emoji: selectedHikeCondition});
+  renderHikeReports();
+  toggleHikeForm();
+  pendingHikePhoto = null;
+  selectedHikeCondition = '🥾';
+  removeHikePhoto();
+  toast('Photo partagée, merci !');
+}
+function renderHikeReports(){
+  const el = document.getElementById('hike-reports');
+  if(!el) return;
+  if(HIKE_REPORTS.length===0){
+    el.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Personne n’a encore partagé de photo.</div>';
+    return;
+  }
+  el.innerHTML = HIKE_REPORTS.map(r => `
+    <div class="wx-report-card">
+      <img src="${r.photo}" alt="">
+      <div class="wx-report-emoji">${r.emoji}</div>
+      <div class="wx-report-info">
+        <div class="wx-report-place">${r.place}</div>
+        <div class="wx-report-time">${r.time}</div>
+      </div>
+    </div>`).join('');
+}
+
+function trailInfo(i){
+  const t = TRAILS[i];
+  document.getElementById('comments-title').textContent = t.icon + ' ' + t.name;
+  document.getElementById('comments-list').innerHTML = `
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">📍 ${t.place} · ⏱ ${t.duration} · 📏 ${t.distance}</div>
+    <div style="font-size:13px; color:var(--ink); line-height:1.4;">${t.desc}</div>
+  `;
+  document.getElementById('comment-form').style.display = 'none';
+  document.getElementById('comments-overlay').classList.add('show');
+}
+
+/* ---- Préférences de notifications ---- */
+let notifPrefs = {};
+function initNotifPrefs(){
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem('zapy-notif-prefs') || 'null'); }catch(e){}
+  CATEGORIES.forEach(c => { notifPrefs[c.id] = saved && (c.id in saved) ? saved[c.id] : true; });
+}
+function renderNotifPrefs(){
+  document.getElementById('notif-list').innerHTML = CATEGORIES.map(c => `
+    <div class="notif-row">
+      <div class="menu-ico" style="background:${c.color}">${ICONS[c.icon]}</div>
+      <div class="menu-label">${c.label}</div>
+      <div class="switch ${notifPrefs[c.id]?'on':''}" onclick="toggleNotifPref('${c.id}')"><div class="knob"></div></div>
+    </div>`).join('');
+}
+function toggleNotifPref(id){
+  notifPrefs[id] = !notifPrefs[id];
+  try{ localStorage.setItem('zapy-notif-prefs', JSON.stringify(notifPrefs)); }catch(e){}
+  renderNotifPrefs();
+}
+
+/* ---- Thème clair / sombre ---- */
+function applyTheme(mode){
+  document.body.dataset.theme = mode;
+  const sw = document.getElementById('theme-switch');
+  if(sw) sw.classList.toggle('on', mode==='dark');
+  try{ localStorage.setItem('zapy-theme', mode); }catch(e){}
+}
+function toggleTheme(){
+  const current = document.body.dataset.theme === 'dark' ? 'dark' : 'light';
+  applyTheme(current==='dark' ? 'light' : 'dark');
+}
+function initTheme(){
+  let saved = null;
+  try{ saved = localStorage.getItem('zapy-theme'); }catch(e){}
+  applyTheme(saved === 'dark' ? 'dark' : 'light');
+}
+
+/* ---- Profil ---- */
+function renderProfile(){
+  const mine = posts.filter(p=>p.name==='Toi');
+  document.getElementById('stat-pubs').textContent = mine.length;
+  document.getElementById('stat-confirms').textContent = mine.reduce((s,p)=>s+p.likes,0);
+  document.getElementById('stat-favs').textContent = suggestions.filter(s=>s.fav).length;
+}
+
+/* ---- Administration ---- */
+let totalUsers = 1284;
+let merchants = [
+  {name:'Restaurant Le Ti’Kréol', plan:'Visibilité', price:59, since:'Sept. 2026'},
+  {name:'Zouk Cars — Location', plan:'Découverte', price:29, since:'Août 2026'},
+  {name:'Boutique Ti Bijou', plan:'Partenaire', price:99, since:'Sept. 2026'},
+];
+let adminUsersList = [
+  {id:1, name:'Léa972', reports:0, blocked:false},
+  {id:2, name:'Titou972', reports:0, blocked:false},
+  {id:3, name:'Nath972', reports:0, blocked:false},
+  {id:4, name:'KaruArt972', reports:0, blocked:false},
+  {id:5, name:'WifiGratuit972', reports:4, blocked:false},
+];
+
+function renderAdmin(){
+  document.getElementById('adm-users').textContent = totalUsers.toLocaleString('fr-FR');
+  document.getElementById('adm-pubs').textContent = posts.length;
+  const revenue = merchants.reduce((s,m)=>s+m.price,0);
+  document.getElementById('adm-revenue').textContent = revenue + '€';
+
+  document.getElementById('admin-merchants').innerHTML = merchants.map(m => `
+    <div class="admin-row">
+      <div class="admin-main">
+        <div class="admin-title">${m.name}</div>
+        <div class="admin-meta">Formule ${m.plan} · ${m.price}€/mois · depuis ${m.since}</div>
+      </div>
+      <div class="admin-actions">
+        <div class="admin-btn" onclick="toast('Facture — à venir')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6"/></svg></div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('admin-users').innerHTML = adminUsersList.map(u => `
+    <div class="admin-row">
+      <div class="avatar" style="background:${u.blocked?'#B0BEC5':'#4FC3F7'};">${u.name[0]}</div>
+      <div class="admin-main">
+        <div class="admin-title">${u.name} ${u.blocked?'<span style="color:#E5484D; font-size:11px; font-weight:700;">· Bloqué</span>':''}</div>
+        <div class="admin-meta">${u.reports>0? u.reports+' signalement'+(u.reports>1?'s':'')+' reçus' : 'Aucun signalement'}</div>
+      </div>
+      <div class="admin-actions">
+        <div class="admin-btn ${u.blocked?'':'danger'}" onclick="toggleBlockUser(${u.id})">
+          ${u.blocked
+            ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M12 15v2"/><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7-2.6"/></svg>'
+            : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.9" y1="4.9" x2="19.1" y2="19.1"/></svg>'}
+        </div>
+      </div>
+    </div>`).join('');
+
+  document.getElementById('admin-count').textContent = posts.length + ' publication' + (posts.length>1?'s':'') + ' active' + (posts.length>1?'s':'');
+  const cat = id => CATEGORIES.find(c=>c.id===id);
+  document.getElementById('admin-list').innerHTML = posts.map(p => `
+    <div class="admin-row">
+      <div class="admin-main">
+        <div class="admin-title">${p.title}</div>
+        <div class="admin-meta">${p.name} · ${cat(p.cat)? cat(p.cat).label : p.cat} · ${p.place}</div>
+      </div>
+      <div class="admin-actions">
+        <div class="admin-btn" onclick="toast('Détail — à venir')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <div class="admin-btn danger" onclick="adminRemove(${p.id})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
+      </div>
+    </div>`).join('');
+}
+function toggleBlockUser(id){
+  const u = adminUsersList.find(x=>x.id===id);
+  u.blocked = !u.blocked;
+  renderAdmin();
+  toast(u.blocked ? u.name + ' a été bloqué' : u.name + ' a été débloqué');
+}
+function adminRemove(id){
+  posts = posts.filter(p=>p.id!==id);
+  renderAdmin();
+  renderPosts();
+  renderProfile();
+  toast('Publication supprimée');
+}
+
+let toastTimer;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
+}
+
+renderCatRow();
+renderPosts();
+renderSuggestions();
+renderCatGrid();
+renderUrgency();
+initTheme();
+initNotifPrefs();
+renderMapPins('map-pins-thumb');
+renderMapPins('map-pins-full');
+document.getElementById('quick-wx-sub').textContent = WEATHER_NOW.temp + '°C · ' + WEATHER_NOW.place;
+document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' sentiers à découvrir';
+</script>
+</body>
+</html>
