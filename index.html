@@ -506,36 +506,7 @@
       <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
         Mettez votre commerce en avant auprès de toute la Martinique. Vos publications sponsorisées apparaissent en priorité dans le fil et sur la carte.
       </div>
-      <div class="pricing-list">
-        <div class="price-card">
-          <div class="price-top"><span class="price-name">Découverte</span><span class="price-amount">29€<small>/mois</small></span></div>
-          <ul class="price-feats">
-            <li>1 publication sponsorisée active</li>
-            <li>Badge « Sponsorisé »</li>
-            <li>Visible dans votre commune</li>
-          </ul>
-          <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
-        </div>
-        <div class="price-card featured">
-          <div class="price-top"><span class="price-name">Visibilité</span><span class="price-amount">59€<small>/mois</small></span></div>
-          <ul class="price-feats">
-            <li>3 publications sponsorisées actives</li>
-            <li>Mise en avant sur la carte</li>
-            <li>Visible dans toute la Martinique</li>
-            <li>Statistiques de vues</li>
-          </ul>
-          <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
-        </div>
-        <div class="price-card">
-          <div class="price-top"><span class="price-name">Partenaire</span><span class="price-amount">99€<small>/mois</small></span></div>
-          <ul class="price-feats">
-            <li>Publications illimitées</li>
-            <li>Badge « Commerce vérifié »</li>
-            <li>Notifications push aux abonnés</li>
-          </ul>
-          <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
-        </div>
-      </div>
+      <div class="pricing-list" id="pricing-list"></div>
       <div class="section-tag">Aperçu dans le fil</div>
       <div class="post-list" style="padding-bottom:20px;">
         <div class="post-card">
@@ -581,6 +552,9 @@
         <div class="stat-box"><div class="stat-num" id="adm-pubs">0</div><div class="stat-label">Publications actives</div></div>
         <div class="stat-box"><div class="stat-num" id="adm-revenue">0€</div><div class="stat-label">Revenus / mois</div></div>
       </div>
+
+      <div class="section-tag">Tarifs des abonnements (affiche Espace commerçant)</div>
+      <div class="admin-list" id="admin-plan-tiers"></div>
 
       <div class="section-tag">Abonnements commerçants</div>
       <div class="admin-list" id="admin-merchants"></div>
@@ -1718,27 +1692,50 @@ let merchants = [
   {id:2, name:'Zouk Cars — Location', plan:'Découverte', price:29, since:'Août 2026'},
   {id:3, name:'Boutique Ti Bijou', plan:'Partenaire', price:99, since:'Sept. 2026'},
 ];
-function loadMerchantPrices(){
+
+/* ---- Tarifs des 3 formules d'abonnement (affiche "Espace commerçant") ----
+   Modifiables par l'admin : ça change le prix affiché pour les FUTURS souscripteurs,
+   pas le prix déjà verrouillé des commerçants déjà abonnés (voir `merchants` ci-dessus). */
+let PLAN_TIERS = [
+  {id:'decouverte', name:'Découverte', price:29, featured:false,
+   feats:['1 publication sponsorisée active', 'Badge « Sponsorisé »', 'Visible dans votre commune']},
+  {id:'visibilite', name:'Visibilité', price:59, featured:true,
+   feats:['3 publications sponsorisées actives', 'Mise en avant sur la carte', 'Visible dans toute la Martinique', 'Statistiques de vues']},
+  {id:'partenaire', name:'Partenaire', price:99, featured:false,
+   feats:['Publications illimitées', 'Badge « Commerce vérifié »', 'Notifications push aux abonnés']},
+];
+function loadPlanTierPrices(){
   try{
-    const saved = JSON.parse(localStorage.getItem('zapy_merchant_prices') || '{}');
-    merchants.forEach(m => { if(saved[m.id] != null) m.price = saved[m.id]; });
+    const saved = JSON.parse(localStorage.getItem('zapy_plan_tier_prices') || '{}');
+    PLAN_TIERS.forEach(t => { if(saved[t.id] != null) t.price = saved[t.id]; });
   }catch(e){ /* repli silencieux */ }
 }
-function editMerchantPrice(id){
-  const m = merchants.find(x=>x.id===id);
-  if(!m) return;
-  const input = prompt('Nouveau prix mensuel pour "' + m.name + '" (en €) :', m.price);
+function editPlanTierPrice(id){
+  const t = PLAN_TIERS.find(x=>x.id===id);
+  if(!t) return;
+  const input = prompt('Nouveau prix mensuel pour la formule "' + t.name + '" (en €) :', t.price);
   if(input === null) return;
   const price = parseFloat(input.replace(',', '.'));
   if(isNaN(price) || price < 0){ toast('Prix invalide'); return; }
-  m.price = Math.round(price * 100) / 100;
+  t.price = Math.round(price * 100) / 100;
   try{
-    const saved = JSON.parse(localStorage.getItem('zapy_merchant_prices') || '{}');
-    saved[m.id] = m.price;
-    localStorage.setItem('zapy_merchant_prices', JSON.stringify(saved));
+    const saved = JSON.parse(localStorage.getItem('zapy_plan_tier_prices') || '{}');
+    saved[t.id] = t.price;
+    localStorage.setItem('zapy_plan_tier_prices', JSON.stringify(saved));
   }catch(e){ /* repli silencieux : le changement reste actif pour cette session */ }
   renderAdmin();
-  toast('Prix mis à jour — ' + m.price + '€/mois');
+  renderPricingList();
+  toast('Tarif "' + t.name + '" mis à jour — ' + t.price + '€/mois');
+}
+function renderPricingList(){
+  const el = document.getElementById('pricing-list');
+  if(!el) return;
+  el.innerHTML = PLAN_TIERS.map(t => `
+    <div class="price-card ${t.featured?'featured':''}">
+      <div class="price-top"><span class="price-name">${t.name}</span><span class="price-amount">${t.price}€<small>/mois</small></span></div>
+      <ul class="price-feats">${t.feats.map(f=>`<li>${f}</li>`).join('')}</ul>
+      <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
+    </div>`).join('');
 }
 function generateInvoice(id){
   const m = merchants.find(x=>x.id===id);
@@ -1783,6 +1780,17 @@ function renderAdmin(){
   const revenue = merchants.reduce((s,m)=>s+m.price,0);
   document.getElementById('adm-revenue').textContent = revenue + '€';
 
+  document.getElementById('admin-plan-tiers').innerHTML = PLAN_TIERS.map(t => `
+    <div class="admin-row">
+      <div class="admin-main">
+        <div class="admin-title">${t.name}</div>
+        <div class="admin-meta">${t.price}€/mois · affiché dans l'Espace commerçant</div>
+      </div>
+      <div class="admin-actions">
+        <div class="admin-btn" onclick="editPlanTierPrice('${t.id}')" title="Modifier le tarif"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+      </div>
+    </div>`).join('');
+
   document.getElementById('admin-merchants').innerHTML = merchants.map(m => `
     <div class="admin-row">
       <div class="admin-main">
@@ -1790,7 +1798,6 @@ function renderAdmin(){
         <div class="admin-meta">Formule ${m.plan} · ${m.price}€/mois · depuis ${m.since}</div>
       </div>
       <div class="admin-actions">
-        <div class="admin-btn" onclick="editMerchantPrice(${m.id})" title="Modifier le prix"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
         <div class="admin-btn" onclick="generateInvoice(${m.id})" title="Voir la facture"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6"/></svg></div>
       </div>
     </div>`).join('');
@@ -1849,7 +1856,8 @@ function toast(msg){
 }
 
 populateCommuneLists();
-loadMerchantPrices();
+loadPlanTierPrices();
+renderPricingList();
 renderCatRow();
 renderPosts();
 renderSuggestions();
