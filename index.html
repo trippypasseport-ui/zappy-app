@@ -1504,6 +1504,9 @@ async function initBackend(){
       session = data.session;
     }
     currentUserId = session.user.id;
+    // Le profil doit exister avant toute publication : author_id référence profiles(id).
+    const { error: profileError } = await sb.from('profiles').upsert({ id: currentUserId, pseudo: myPseudo }, { onConflict: 'id' });
+    if(profileError){ console.warn('Création du profil impossible', profileError); }
     await loadRemotePosts();
     sb.channel('public:publications')
       .on('postgres_changes', {event:'*', schema:'public', table:'publications'}, () => { loadRemotePosts(); })
