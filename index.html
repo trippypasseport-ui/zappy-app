@@ -422,14 +422,8 @@
             <span style="font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;" onclick="toggleManualLocation()">Modifier</span>
           </div>
           <div class="loc-box" id="loc-manual" style="display:none;">
-            <input type="text" id="f-commune" list="commune-list" placeholder="Ex : La Trinité" style="border:none; background:transparent; padding:0; flex-grow:1;" onkeydown="if(event.key==='Enter'){event.preventDefault(); confirmManualLocation();}">
-            <datalist id="commune-list">
-              <option value="Grand'Rivière"><option value="Basse-Pointe"><option value="Le Prêcheur">
-              <option value="Saint-Pierre"><option value="Le Carbet"><option value="Gros-Morne">
-              <option value="La Trinité"><option value="Sainte-Marie"><option value="Fort-de-France">
-              <option value="Le Lamentin"><option value="Les Trois-Îlets"><option value="Le Diamant">
-              <option value="Sainte-Luce"><option value="Le Marin">
-            </datalist>
+            <select id="f-commune" style="border:none; background:transparent; padding:0; flex-grow:1; font-size:13px; color:var(--ink); appearance:none; -webkit-appearance:none;"></select>
+            <datalist id="commune-list"></datalist>
             <span style="font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;" onclick="confirmManualLocation()">OK</span>
           </div>
           <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné</div>
@@ -875,6 +869,20 @@ async function initBackend(){
     sb.channel('public:confirmations')
       .on('postgres_changes', {event:'*', schema:'public', table:'confirmations'}, () => { loadRemotePosts(); })
       .subscribe();
+    sb.channel('public:likes')
+      .on('postgres_changes', {event:'*', schema:'public', table:'likes'}, () => { loadRemotePosts(); })
+      .subscribe();
+    sb.channel('public:comments')
+      .on('postgres_changes', {event:'*', schema:'public', table:'comments'}, () => { loadRemotePosts(); })
+      .subscribe();
+    sb.channel('public:weather_reports')
+      .on('postgres_changes', {event:'*', schema:'public', table:'weather_reports'}, () => { loadRemoteWxReports(); })
+      .subscribe();
+    sb.channel('public:hike_reports')
+      .on('postgres_changes', {event:'*', schema:'public', table:'hike_reports'}, () => { loadRemoteHikeReports(); })
+      .subscribe();
+    await loadRemoteWxReports();
+    await loadRemoteHikeReports();
   }catch(e){ console.warn('Backend partagé indisponible, mode local uniquement', e); }
 }
 
@@ -882,7 +890,7 @@ async function loadRemotePosts(){
   if(!sb) return;
   const { data, error } = await sb
     .from('publications')
-    .select('*, confirmations(user_id)')
+    .select('*, confirmations(user_id), likes(user_id), comments(id, author_name, text, created_at)')
     .order('created_at', {ascending:false});
   if(error){ console.warn('Erreur chargement publications', error); return; }
   const catMeta = {};
@@ -892,17 +900,21 @@ async function loadRemotePosts(){
     const confirmCount = (row.confirmations||[]).length;
     const cleared = confirmCount >= 2;
     if(confirmCount>0 && (row.confirmations||[]).some(c=>c.user_id===currentUserId)) myConfirmedIds.add(row.id);
+    const likeRows = row.likes || [];
+    const iLiked = likeRows.some(l=>l.user_id===currentUserId);
+    const commentRows = (row.comments || []).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
     return {
       id: row.id, remote:true,
       name: row.author_name || 'Testeur Zapy', initial: (row.author_name||'T')[0].toUpperCase(),
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url, audio:null,
-      likes:0, commentCount:0, liked:false, cat: row.category_id,
+      likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
-      comments:[]
+      comments: commentRows.map(c => ({author: c.author_name || 'Testeur Zapy', text: c.text}))
     };
   });
   renderPosts();
+  if(openPostId!=null) renderComments();
 }
 
 function timeAgo(iso){
@@ -1002,7 +1014,20 @@ function renderPosts(){
       ${p.photo? `<div class="post-photo"><img src="${p.photo}" alt=""></div>` : ''}
     </div>`).join('');
 }
-function toggleLike(id){
+async function toggleLike(id){
+  const remote = remotePosts.find(x=>String(x.id)===String(id));
+  if(remote && sb && currentUserId){
+    remote.liked = !remote.liked;
+    remote.likes += remote.liked ? 1 : -1;
+    renderPosts();
+    if(remote.liked){
+      const { error } = await sb.from('likes').insert({publication_id: remote.id, user_id: currentUserId});
+      if(error && error.code !== '23505'){ remote.liked=false; remote.likes--; renderPosts(); return; }
+    } else {
+      await sb.from('likes').delete().eq('publication_id', remote.id).eq('user_id', currentUserId);
+    }
+    return;
+  }
   const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(id));
   if(!p) return;
   p.liked = !p.liked;
@@ -1039,10 +1064,28 @@ const MAP_PINS = [
 ];
 let nextPinSlot = 0;
 const NEW_PIN_SLOTS = [{left:57, top:28}, {left:35, top:20}, {left:63, top:57}, {left:48, top:63}];
+const PIN_EMOJI_MAP = {trafic:'🚗', commerces:'🛒', evenements:'📅', communaute:'👥', bonsplans:'🌴', artiste:'🎨'};
+let renderedMapPins = [];
+
+function buildRemoteMapPins(){
+  return remotePosts
+    .filter(p => p.place && p.place !== '—')
+    .map(p => {
+      const coord = COMMUNE_COORDS[normalizeCommune(p.place)];
+      if(!coord) return null;
+      return {
+        left: coord.left, top: coord.top, icon: PIN_EMOJI_MAP[p.cat] || '📍',
+        name: p.title, place: p.place, desc: p.text || 'Aucune description pour l’instant.',
+        photo: p.photo, color: p.color, isNew: true
+      };
+    })
+    .filter(Boolean);
+}
 
 function pinInfo(e, index){
   e.stopPropagation();
-  const p = MAP_PINS[index];
+  const p = renderedMapPins[index];
+  if(!p) return;
   document.getElementById('comments-title').textContent = p.icon + ' ' + p.name;
   document.getElementById('comments-list').innerHTML = `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">📍 ${p.place}${p.isNew?' · <span style="color:var(--orange); font-weight:700;">Nouveau</span>':''}</div>
@@ -1055,7 +1098,8 @@ function pinInfo(e, index){
 function renderMapPins(containerId){
   const c = document.getElementById(containerId);
   if(!c) return;
-  c.innerHTML = MAP_PINS.map((p, i) => `
+  renderedMapPins = [...MAP_PINS, ...buildRemoteMapPins()];
+  c.innerHTML = renderedMapPins.map((p, i) => `
     ${p.isNew ? `<div style="position:absolute; left:${p.left}%; top:${p.top}%; transform:translate(-50%,-50%); width:28px; height:28px; border-radius:50%; background:${p.color||'#FF8A00'}; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; font-size:13px; pointer-events:none;">${p.icon}</div>` : ''}
     <button type="button" class="map-pin" style="left:${p.left}%; top:${p.top}%;" onclick="pinInfo(event, ${i})" aria-label="${p.name}"></button>`).join('');
 }
@@ -1073,17 +1117,24 @@ function renderComments(){
       </div>`).join('')
     + (extra>0 ? `<div style="text-align:center; padding:10px 0; font-size:11.5px; color:var(--muted);">et ${extra} autres commentaires</div>` : '');
 }
-function submitComment(e){
+async function submitComment(e){
   e.preventDefault();
   const input = document.getElementById('comment-input');
   const text = input.value.trim();
   if(!text) return;
+  const remote = remotePosts.find(x=>String(x.id)===String(openPostId));
+  input.value = '';
+  if(remote && sb && currentUserId){
+    const { error } = await sb.from('comments').insert({publication_id: remote.id, author_id: currentUserId, author_name: myPseudo, text});
+    if(error){ console.warn('Commentaire échoué', error); toast('Erreur, réessaie'); return; }
+    await loadRemotePosts();
+    return;
+  }
   const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(openPostId));
   if(!p) return;
   p.comments = p.comments || [];
   p.comments.push({author:'Toi', text});
   p.commentCount++;
-  input.value = '';
   renderComments();
   renderPosts();
 }
@@ -1137,24 +1188,50 @@ function selectFormCat(id){
 
 /* ---- Localisation ---- */
 const COMMUNE_COORDS = {
-  grandriviere:  {left:19.3, top:2.5,  label:"Grand'Rivière"},
-  bassepointe:   {left:42.6, top:5.5,  label:"Basse-Pointe"},
-  precheur:      {left:19.3, top:19.7, label:"Le Prêcheur"},
-  saintpierre:   {left:25.0, top:31.0, label:"Saint-Pierre"},
-  carbet:        {left:22.4, top:40.8, label:"Le Carbet"},
-  grosmorne:     {left:55.4, top:41.3, label:"Gros-Morne"},
-  trinite:       {left:62.8, top:31.0, label:"La Trinité"},
-  saintemarie:   {left:60.0, top:23.0, label:"Sainte-Marie"},
-  fortdefrance:  {left:43.0, top:59.7, label:"Fort-de-France"},
-  lamentin:      {left:57.9, top:58.6, label:"Le Lamentin"},
-  troisilets:    {left:33.0, top:78.7, label:"Les Trois-Îlets"},
-  diamant:       {left:38.8, top:88.2, label:"Le Diamant"},
-  sainteluce:    {left:61.6, top:87.7, label:"Sainte-Luce"},
-  marin:         {left:76.0, top:85.7, label:"Le Marin"},
+  grandriviere:    {left:19.3, top:2.5,  label:"Grand'Rivière"},
+  macouba:         {left:33,   top:4,    label:"Macouba"},
+  bassepointe:     {left:42.6, top:5.5,  label:"Basse-Pointe"},
+  ajoupabouillon:  {left:38,   top:12,   label:"Ajoupa-Bouillon"},
+  lorrain:         {left:48,   top:15,   label:"Le Lorrain"},
+  marigot:         {left:53,   top:12,   label:"Le Marigot"},
+  precheur:        {left:19.3, top:19.7, label:"Le Prêcheur"},
+  mornerouge:      {left:35,   top:22,   label:"Le Morne-Rouge"},
+  fondssaintdenis: {left:27,   top:27,   label:"Fonds-Saint-Denis"},
+  saintpierre:     {left:25.0, top:31.0, label:"Saint-Pierre"},
+  mornevert:       {left:28,   top:36,   label:"Le Morne-Vert"},
+  carbet:          {left:22.4, top:40.8, label:"Le Carbet"},
+  grosmorne:       {left:55.4, top:41.3, label:"Gros-Morne"},
+  trinite:         {left:62.8, top:31.0, label:"La Trinité"},
+  saintemarie:     {left:60.0, top:23.0, label:"Sainte-Marie"},
+  bellefontaine:   {left:20,   top:33,   label:"Bellefontaine"},
+  casepilote:      {left:24,   top:48,   label:"Case-Pilote"},
+  schoelcher:      {left:38,   top:55,   label:"Schoelcher"},
+  fortdefrance:    {left:43.0, top:59.7, label:"Fort-de-France"},
+  lamentin:        {left:57.9, top:58.6, label:"Le Lamentin"},
+  robert:          {left:66,   top:44,   label:"Le Robert"},
+  saintjoseph:     {left:48,   top:50,   label:"Saint-Joseph"},
+  ducos:           {left:50,   top:64,   label:"Ducos"},
+  rivieresalee:    {left:45,   top:68,   label:"Rivière-Salée"},
+  francois:        {left:68,   top:56,   label:"Le François"},
+  saintesprit:     {left:56,   top:66,   label:"Saint-Esprit"},
+  troisilets:      {left:33.0, top:78.7, label:"Les Trois-Îlets"},
+  ansesdarlet:     {left:28,   top:82,   label:"Les Anses-d'Arlet"},
+  rivierepilote:   {left:50,   top:78,   label:"Rivière-Pilote"},
+  diamant:         {left:38.8, top:88.2, label:"Le Diamant"},
+  sainteluce:      {left:61.6, top:87.7, label:"Sainte-Luce"},
+  vauclin:         {left:74,   top:70,   label:"Le Vauclin"},
+  marin:           {left:76.0, top:85.7, label:"Le Marin"},
+  sainteanne:      {left:80,   top:90,   label:"Sainte-Anne"},
 };
+const COMMUNES = Object.keys(COMMUNE_COORDS).map(k => COMMUNE_COORDS[k].label).sort((a,b) => a.localeCompare(b, 'fr'));
 function normalizeCommune(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'')
     .toLowerCase().replace(/^(le |la |les |l')/,'').replace(/[^a-z]/g,'');
+}
+function populateCommuneLists(){
+  const opts = COMMUNES.map(c => `<option value="${c}">${c}</option>`).join('');
+  document.getElementById('f-commune').innerHTML = opts;
+  document.getElementById('commune-list').innerHTML = COMMUNES.map(c => `<option value="${c}">`).join('');
 }
 let selectedCommune = 'Fort-de-France';
 let locTimer;
@@ -1277,21 +1354,25 @@ async function handlePublish(e){
       urgency: selectedCat==='trafic' ? selectedUrgency : null, cleared:false, clearConfirms:0
     });
   }
-  const EMOJI_MAP = {trafic:'🚗', commerces:'🛒', evenements:'📅', communaute:'👥', bonsplans:'🌴', artiste:'🎨'};
-  const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
-  let pinLeft, pinTop;
-  if(coord){
-    pinLeft = coord.left; pinTop = coord.top;
-  } else {
-    const slot = NEW_PIN_SLOTS[nextPinSlot % NEW_PIN_SLOTS.length];
-    nextPinSlot++;
-    pinLeft = slot.left; pinTop = slot.top;
+  if(!publishedRemotely){
+    // Publication restée locale (pas de backend partagé) : on pousse le pin nous-mêmes.
+    // Si elle a été publiée côté Supabase, son pin apparaît automatiquement via
+    // buildRemoteMapPins() (dérivé de remotePosts) — pas besoin de le dupliquer ici.
+    const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
+    let pinLeft, pinTop;
+    if(coord){
+      pinLeft = coord.left; pinTop = coord.top;
+    } else {
+      const slot = NEW_PIN_SLOTS[nextPinSlot % NEW_PIN_SLOTS.length];
+      nextPinSlot++;
+      pinLeft = slot.left; pinTop = slot.top;
+    }
+    MAP_PINS.push({
+      left: pinLeft, top: pinTop, icon: PIN_EMOJI_MAP[selectedCat] || '📍',
+      name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
+      photo: pendingPhoto, color: cat.color, isNew: true
+    });
   }
-  MAP_PINS.push({
-    left: pinLeft, top: pinTop, icon: EMOJI_MAP[selectedCat] || '📍',
-    name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
-    photo: pendingPhoto, color: cat.color, isNew: true
-  });
   renderMapPins('map-pins-thumb');
   renderMapPins('map-pins-full');
   activeCat = 'toutes';
@@ -1362,6 +1443,14 @@ let WEATHER_REPORTS = [
   {id:1, photo:'./assets/post_sunset.png', place:'Sainte-Anne', time:'Il y a 20 min', emoji:'☀️'},
   {id:2, photo:'./assets/sugg_plage.png', place:'Les Trois-Îlets', time:'Il y a 1h', emoji:'⛅'},
 ];
+let remoteWxReports = [];
+async function loadRemoteWxReports(){
+  if(!sb) return;
+  const { data, error } = await sb.from('weather_reports').select('*').order('created_at', {ascending:false}).limit(30);
+  if(error){ console.warn('Erreur météo communauté', error); return; }
+  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji}));
+  renderWxReports();
+}
 
 function toggleWxForm(){
   wxFormOpen = !wxFormOpen;
@@ -1401,12 +1490,18 @@ function removeWxPhoto(){
       <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
     </label>`;
 }
-function publishWxReport(){
+async function publishWxReport(){
   const commune = document.getElementById('f-wx-commune').value.trim();
   if(!pendingWxPhoto){ toast('Ajoute une photo avant de publier'); return; }
   if(!commune){ toast('Indique ta position'); return; }
-  WEATHER_REPORTS.unshift({id: nextWxId++, photo: pendingWxPhoto, place: commune, time:'À l’instant', emoji: selectedWxCondition});
-  renderWxReports();
+  if(sb && currentUserId){
+    const { error } = await sb.from('weather_reports').insert({author_id: currentUserId, author_name: myPseudo, commune, emoji: selectedWxCondition, photo_url: pendingWxPhoto});
+    if(error){ console.warn('Météo partagée échouée', error); toast('Erreur, réessaie'); return; }
+    await loadRemoteWxReports();
+  } else {
+    WEATHER_REPORTS.unshift({id: nextWxId++, photo: pendingWxPhoto, place: commune, time:'À l’instant', emoji: selectedWxCondition});
+    renderWxReports();
+  }
   toggleWxForm();
   pendingWxPhoto = null;
   document.getElementById('f-wx-commune').value = '';
@@ -1417,11 +1512,12 @@ function publishWxReport(){
 function renderWxReports(){
   const el = document.getElementById('wx-reports');
   if(!el) return;
-  if(WEATHER_REPORTS.length===0){
+  const combined = [...remoteWxReports, ...WEATHER_REPORTS];
+  if(combined.length===0){
     el.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Personne n’a encore partagé sa météo.</div>';
     return;
   }
-  el.innerHTML = WEATHER_REPORTS.map(r => `
+  el.innerHTML = combined.map(r => `
     <div class="wx-report-card">
       <img src="${r.photo}" alt="">
       <div class="wx-report-emoji">${r.emoji}</div>
@@ -1475,6 +1571,14 @@ let HIKE_REPORTS = [
   {id:1, photo:'./assets/hero.png', place:'Montagne Pelée', time:'Il y a 3h', emoji:'🌳'},
   {id:2, photo:'./assets/sugg_marche.png', place:'Canal de Beauregard', time:'Hier', emoji:'🥾'},
 ];
+let remoteHikeReports = [];
+async function loadRemoteHikeReports(){
+  if(!sb) return;
+  const { data, error } = await sb.from('hike_reports').select('*').order('created_at', {ascending:false}).limit(30);
+  if(error){ console.warn('Erreur rando communauté', error); return; }
+  remoteHikeReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.trail_name, time:timeAgo(r.created_at), emoji:r.emoji}));
+  renderHikeReports();
+}
 
 function toggleHikeForm(){
   hikeFormOpen = !hikeFormOpen;
@@ -1514,11 +1618,17 @@ function removeHikePhoto(){
       <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
     </label>`;
 }
-function publishHikeReport(){
+async function publishHikeReport(){
   const trail = document.getElementById('f-hike-trail').value;
   if(!pendingHikePhoto){ toast('Ajoute une photo avant de publier'); return; }
-  HIKE_REPORTS.unshift({id: nextHikeId++, photo: pendingHikePhoto, place: trail, time:'À l’instant', emoji: selectedHikeCondition});
-  renderHikeReports();
+  if(sb && currentUserId){
+    const { error } = await sb.from('hike_reports').insert({author_id: currentUserId, author_name: myPseudo, trail_name: trail, emoji: selectedHikeCondition, photo_url: pendingHikePhoto});
+    if(error){ console.warn('Photo rando échouée', error); toast('Erreur, réessaie'); return; }
+    await loadRemoteHikeReports();
+  } else {
+    HIKE_REPORTS.unshift({id: nextHikeId++, photo: pendingHikePhoto, place: trail, time:'À l’instant', emoji: selectedHikeCondition});
+    renderHikeReports();
+  }
   toggleHikeForm();
   pendingHikePhoto = null;
   selectedHikeCondition = '🥾';
@@ -1528,11 +1638,12 @@ function publishHikeReport(){
 function renderHikeReports(){
   const el = document.getElementById('hike-reports');
   if(!el) return;
-  if(HIKE_REPORTS.length===0){
+  const combined = [...remoteHikeReports, ...HIKE_REPORTS];
+  if(combined.length===0){
     el.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Personne n’a encore partagé de photo.</div>';
     return;
   }
-  el.innerHTML = HIKE_REPORTS.map(r => `
+  el.innerHTML = combined.map(r => `
     <div class="wx-report-card">
       <img src="${r.photo}" alt="">
       <div class="wx-report-emoji">${r.emoji}</div>
@@ -1603,10 +1714,61 @@ function renderProfile(){
 /* ---- Administration ---- */
 let totalUsers = 1284;
 let merchants = [
-  {name:'Restaurant Le Ti’Kréol', plan:'Visibilité', price:59, since:'Sept. 2026'},
-  {name:'Zouk Cars — Location', plan:'Découverte', price:29, since:'Août 2026'},
-  {name:'Boutique Ti Bijou', plan:'Partenaire', price:99, since:'Sept. 2026'},
+  {id:1, name:'Restaurant Le Ti’Kréol', plan:'Visibilité', price:59, since:'Sept. 2026'},
+  {id:2, name:'Zouk Cars — Location', plan:'Découverte', price:29, since:'Août 2026'},
+  {id:3, name:'Boutique Ti Bijou', plan:'Partenaire', price:99, since:'Sept. 2026'},
 ];
+function loadMerchantPrices(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('zapy_merchant_prices') || '{}');
+    merchants.forEach(m => { if(saved[m.id] != null) m.price = saved[m.id]; });
+  }catch(e){ /* repli silencieux */ }
+}
+function editMerchantPrice(id){
+  const m = merchants.find(x=>x.id===id);
+  if(!m) return;
+  const input = prompt('Nouveau prix mensuel pour "' + m.name + '" (en €) :', m.price);
+  if(input === null) return;
+  const price = parseFloat(input.replace(',', '.'));
+  if(isNaN(price) || price < 0){ toast('Prix invalide'); return; }
+  m.price = Math.round(price * 100) / 100;
+  try{
+    const saved = JSON.parse(localStorage.getItem('zapy_merchant_prices') || '{}');
+    saved[m.id] = m.price;
+    localStorage.setItem('zapy_merchant_prices', JSON.stringify(saved));
+  }catch(e){ /* repli silencieux : le changement reste actif pour cette session */ }
+  renderAdmin();
+  toast('Prix mis à jour — ' + m.price + '€/mois');
+}
+function generateInvoice(id){
+  const m = merchants.find(x=>x.id===id);
+  if(!m) return;
+  const now = new Date();
+  const invoiceNo = 'ZAPY-' + now.getFullYear() + '-' + String(id).padStart(4,'0') + '-' + String(now.getMonth()+1).padStart(2,'0');
+  const dateStr = now.toLocaleDateString('fr-FR', {day:'2-digit', month:'long', year:'numeric'});
+  document.getElementById('comments-title').textContent = '🧾 Facture ' + invoiceNo;
+  document.getElementById('comments-list').innerHTML = `
+    <div style="font-size:13px; color:var(--ink); line-height:1.7; border:1px solid var(--line); border-radius:12px; padding:16px;">
+      <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <div><strong>Zapy</strong><br><span style="color:var(--muted); font-size:12px;">Martinique</span></div>
+        <div style="text-align:right; color:var(--muted); font-size:12px;">N° ${invoiceNo}<br>${dateStr}</div>
+      </div>
+      <div style="border-top:1px dashed var(--line); margin:10px 0;"></div>
+      <div style="margin-bottom:6px;"><strong>Facturé à :</strong> ${m.name}</div>
+      <div style="margin-bottom:10px; color:var(--muted); font-size:12.5px;">Abonnement commerçant actif depuis ${m.since}</div>
+      <div style="border-top:1px dashed var(--line); margin:10px 0;"></div>
+      <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:4px;">
+        <span>Formule ${m.plan} — abonnement mensuel</span><span>${m.price.toFixed(2)}€</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-weight:700; font-size:14px; margin-top:10px; padding-top:10px; border-top:1px solid var(--line);">
+        <span>Total</span><span>${m.price.toFixed(2)}€</span>
+      </div>
+    </div>
+    <button type="button" onclick="window.print()" style="margin-top:12px; width:100%; padding:10px; border-radius:10px; border:1px solid var(--line); background:var(--card); font-size:13px; font-weight:600; color:var(--ink); cursor:pointer;">🖨️ Imprimer / Enregistrer en PDF</button>
+  `;
+  document.getElementById('comment-form').style.display = 'none';
+  document.getElementById('comments-overlay').classList.add('show');
+}
 let adminUsersList = [
   {id:1, name:'Léa972', reports:0, blocked:false},
   {id:2, name:'Titou972', reports:0, blocked:false},
@@ -1628,7 +1790,8 @@ function renderAdmin(){
         <div class="admin-meta">Formule ${m.plan} · ${m.price}€/mois · depuis ${m.since}</div>
       </div>
       <div class="admin-actions">
-        <div class="admin-btn" onclick="toast('Facture — à venir')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6"/></svg></div>
+        <div class="admin-btn" onclick="editMerchantPrice(${m.id})" title="Modifier le prix"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+        <div class="admin-btn" onclick="generateInvoice(${m.id})" title="Voir la facture"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9 12h6M9 16h6"/></svg></div>
       </div>
     </div>`).join('');
 
@@ -1685,6 +1848,8 @@ function toast(msg){
   toastTimer = setTimeout(()=>el.classList.remove('show'), 2200);
 }
 
+populateCommuneLists();
+loadMerchantPrices();
 renderCatRow();
 renderPosts();
 renderSuggestions();
