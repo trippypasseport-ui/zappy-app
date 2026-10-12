@@ -1337,7 +1337,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="field-label" style="margin-top:12px;">Ça ressemble à quoi chez toi ?</div>
         <div class="wx-cond-row" id="wx-cond-row"></div>
         <div class="field-label" style="margin-top:12px;">Ta position</div>
-        <input type="text" id="f-wx-commune" list="commune-list" placeholder="Ex : Le Marin" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;">
+        <select id="f-wx-commune" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;"></select>
         <button type="button" class="submit-btn" style="width:100%; margin-top:12px;" onclick="publishWxReport()">Publier ma météo</button>
       </div>
       <div class="wx-reports-grid" id="wx-reports"></div>
@@ -1955,6 +1955,8 @@ function populateCommuneLists(){
   const opts = COMMUNES.map(c => `<option value="${c}">${c}</option>`).join('');
   document.getElementById('f-commune').innerHTML = opts;
   document.getElementById('commune-list').innerHTML = COMMUNES.map(c => `<option value="${c}">`).join('');
+  const wxSelect = document.getElementById('f-wx-commune');
+  if(wxSelect) wxSelect.innerHTML = opts;
 }
 let selectedCommune = 'Fort-de-France';
 let locTimer;
