@@ -1011,9 +1011,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="6 9 12 15 18 9"/></svg>
               </div>
             </div>
-            <div class="bell-btn" onclick="toast('Pas de nouvelle notification pour l’instant')">
+            <div class="bell-btn" onclick="openNotificationsBell()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              <div class="bell-dot"></div>
+              <div class="bell-dot" style="display:none;"></div>
             </div>
           </div>
           <div class="tagline">On partage, on informe,<br>on s'entraide !</div>
@@ -1083,8 +1083,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4FC3F7" stroke-width="1.8"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
               <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter une photo</span>
             </label>
-            <input type="file" id="f-photo" accept="image/*" style="display:none" onchange="handlePhoto(event)">
           </div>
+          <!-- En dehors de #photo-zone exprès : ce bloc est régénéré par
+               renderPhotoZone() (aperçu photo / catalogue), ce qui effaçait
+               ce champ à chaque changement de catégorie et rendait "Ajouter
+               une photo" inopérant (le label ciblait un input disparu). -->
+          <input type="file" id="f-photo" accept="image/*" style="display:none" onchange="handlePhoto(event)">
         </div>
         <div id="audio-block" style="display:none;">
           <div class="field-label">Extrait audio (optionnel)</div>
@@ -1115,6 +1119,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
             <datalist id="commune-list"></datalist>
           </div>
           <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné</div>
+          <span id="loc-retry" style="display:none; font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer; margin-top:6px; align-items:center; gap:5px;" onclick="simulateLocate()">🔄 Réessayer la position GPS précise</span>
         </div>
         <div id="urgency-block" style="display:none;">
           <div class="field-label">Niveau d'urgence</div>
@@ -1548,6 +1553,34 @@ let myPseudo = null;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
 let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
 
+/* ---- Pastille de notification (cloche) ----
+   N'apparaît que s'il existe une publication (d'un autre membre) postée
+   après la dernière fois que CET appareil a consulté la cloche — jamais en
+   permanence. "Dernière consultation" est mémorisée en local (localStorage)
+   et initialisée au premier lancement pour ne pas allumer la pastille sur
+   tout l'historique existant dès la toute première ouverture de l'app. */
+let lastSeenPublicationsAt = null;
+try{ lastSeenPublicationsAt = localStorage.getItem('zapy_last_seen_pubs'); }catch(e){}
+if(!lastSeenPublicationsAt){
+  lastSeenPublicationsAt = new Date().toISOString();
+  try{ localStorage.setItem('zapy_last_seen_pubs', lastSeenPublicationsAt); }catch(e){}
+}
+function updateBellDot(){
+  const dot = document.querySelector('.bell-dot');
+  if(!dot) return;
+  const hasNew = remotePosts.some(p => p.authorId && p.authorId !== currentUserId && p.createdAt && new Date(p.createdAt) > new Date(lastSeenPublicationsAt));
+  dot.style.display = hasNew ? 'block' : 'none';
+}
+function openNotificationsBell(){
+  const dot = document.querySelector('.bell-dot');
+  const hadNew = dot && dot.style.display !== 'none';
+  const newCount = remotePosts.filter(p => p.authorId && p.authorId !== currentUserId && p.createdAt && new Date(p.createdAt) > new Date(lastSeenPublicationsAt)).length;
+  lastSeenPublicationsAt = new Date().toISOString();
+  try{ localStorage.setItem('zapy_last_seen_pubs', lastSeenPublicationsAt); }catch(e){}
+  updateBellDot();
+  toast(hadNew ? newCount + ' nouvelle' + (newCount>1?'s':'') + ' publication' + (newCount>1?'s':'') + ' depuis ta dernière visite' : 'Pas de nouvelle notification pour l’instant');
+}
+
 function getPseudo(){
   let p = localStorage.getItem('zapy_pseudo');
   if(!p){
@@ -1625,7 +1658,7 @@ async function loadRemotePosts(){
     const iLiked = likeRows.some(l=>l.user_id===currentUserId);
     const commentRows = (row.comments || []).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
     return {
-      id: row.id, remote:true, authorId: row.author_id,
+      id: row.id, remote:true, authorId: row.author_id, createdAt: row.created_at,
       name: row.author_name || 'Testeur Zapy', initial: (row.author_name||'T')[0].toUpperCase(),
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
@@ -1640,6 +1673,7 @@ async function loadRemotePosts(){
   renderPosts();
   if(openPostId!=null) renderComments();
   renderMapMarkers();
+  updateBellDot();
 }
 
 function timeAgo(iso){
@@ -2163,17 +2197,27 @@ let locTimer;
    l'adresse exacte plutôt que sur le centre de la commune — utile pour un
    événement ou un commerce à une adresse précise. */
 let myGpsLat = null, myGpsLng = null;
+// Affiche/masque le lien "Réessayer la position GPS précise" : visible dès
+// qu'on n'a pas (ou plus) de position exacte, pour permettre de relancer une
+// tentative GPS à tout moment (ex : refus de permission la première fois,
+// ou passage en saisie manuelle qu'on veut annuler).
+function updateLocRetryVisibility(){
+  const retry = document.getElementById('loc-retry');
+  if(retry) retry.style.display = (myGpsLat == null || myGpsLng == null) ? 'inline-flex' : 'none';
+}
 function simulateLocate(){
   document.getElementById('loc-manual').style.display = 'none';
   document.getElementById('loc-box').style.display = 'flex';
   document.getElementById('loc-status').textContent = 'Localisation en cours…';
   document.getElementById('loc-detail').textContent = 'Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné';
+  document.getElementById('loc-retry').style.display = 'none';
   myGpsLat = null; myGpsLng = null;
   clearTimeout(locTimer);
   if(!navigator.geolocation){
     document.getElementById('loc-status').textContent = 'GPS indisponible';
     document.getElementById('loc-detail').textContent = 'Choisis ta commune manuellement ci-dessous';
     toggleManualLocation();
+    updateLocRetryVisibility();
     return;
   }
   navigator.geolocation.getCurrentPosition(pos => {
@@ -2184,10 +2228,16 @@ function simulateLocate(){
     myGpsLat = pos.coords.latitude; myGpsLng = pos.coords.longitude;
     document.getElementById('loc-status').textContent = 'Position exacte détectée';
     document.getElementById('loc-detail').textContent = '📍 ' + selectedCommune + ' — position précise, le pin sera placé exactement ici';
+    updateLocRetryVisibility();
   }, err => {
+    // Le navigateur refuse ou ne peut pas localiser (permission refusée,
+    // GPS coupé, ou — à l'intérieur d'un aperçu Claude Artifact — la
+    // géolocalisation est souvent bloquée par l'iframe : ce cas précis ne se
+    // reproduira pas une fois l'app ouverte en dehors de l'aperçu).
     document.getElementById('loc-status').textContent = 'Position indisponible';
-    document.getElementById('loc-detail').textContent = 'Autorise la localisation ou choisis ta commune manuellement';
+    document.getElementById('loc-detail').textContent = 'Autorise la localisation (ou réessaie ci-dessous) ou choisis ta commune manuellement';
     toggleManualLocation();
+    updateLocRetryVisibility();
   }, {enableHighAccuracy:true, timeout:10000});
 }
 function toggleManualLocation(){
@@ -2207,6 +2257,7 @@ function confirmManualLocation(){
   // Une commune choisie à la main n'a plus de rapport avec la position GPS
   // réelle de l'utilisateur : on n'utilise plus ses coordonnées précises.
   myGpsLat = null; myGpsLng = null;
+  updateLocRetryVisibility();
 }
 
 const URGENCY = ['Faible','Modérée','Élevée','Critique'];
