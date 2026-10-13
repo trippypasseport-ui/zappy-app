@@ -1115,10 +1115,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
             <datalist id="commune-list"></datalist>
           </div>
           <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné</div>
-          <label id="exact-pos-row" style="display:none; align-items:center; gap:7px; margin-top:9px; font-size:12.5px; color:var(--ink); font-weight:700; cursor:pointer;">
-            <input type="checkbox" id="f-exact-pos" style="width:16px; height:16px; accent-color:var(--orange);" onchange="toggleExactPosition(this.checked)">
-            Épingler l'adresse exacte (position GPS précise)
-          </label>
         </div>
         <div id="urgency-block" style="display:none;">
           <div class="field-label">Niveau d'urgence</div>
@@ -2087,23 +2083,12 @@ let locTimer;
    l'adresse exacte plutôt que sur le centre de la commune — utile pour un
    événement ou un commerce à une adresse précise. */
 let myGpsLat = null, myGpsLng = null;
-let exactPositionEnabled = false;
-function showExactPosRow(show){
-  const row = document.getElementById('exact-pos-row');
-  row.style.display = show ? 'flex' : 'none';
-  if(!show){
-    exactPositionEnabled = false;
-    document.getElementById('f-exact-pos').checked = false;
-  }
-}
-function toggleExactPosition(checked){ exactPositionEnabled = checked; }
 function simulateLocate(){
   document.getElementById('loc-manual').style.display = 'none';
   document.getElementById('loc-box').style.display = 'flex';
   document.getElementById('loc-status').textContent = 'Localisation en cours…';
   document.getElementById('loc-detail').textContent = 'Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné';
   myGpsLat = null; myGpsLng = null;
-  showExactPosRow(false);
   clearTimeout(locTimer);
   if(!navigator.geolocation){
     document.getElementById('loc-status').textContent = 'GPS indisponible';
@@ -2114,10 +2099,11 @@ function simulateLocate(){
   navigator.geolocation.getCurrentPosition(pos => {
     const nearest = nearestCommune(pos.coords.latitude, pos.coords.longitude);
     selectedCommune = nearest ? nearest.label : 'Fort-de-France';
+    // Dès que le GPS répond, on garde la position exacte : elle sert
+    // automatiquement de lieu de publication (plus besoin d'une case à cocher).
     myGpsLat = pos.coords.latitude; myGpsLng = pos.coords.longitude;
-    document.getElementById('loc-status').textContent = 'Position détectée';
-    document.getElementById('loc-detail').textContent = selectedCommune + ' (détection automatique)';
-    showExactPosRow(true);
+    document.getElementById('loc-status').textContent = 'Position exacte détectée';
+    document.getElementById('loc-detail').textContent = '📍 ' + selectedCommune + ' — position précise, le pin sera placé exactement ici';
   }, err => {
     document.getElementById('loc-status').textContent = 'Position indisponible';
     document.getElementById('loc-detail').textContent = 'Autorise la localisation ou choisis ta commune manuellement';
@@ -2139,8 +2125,8 @@ function confirmManualLocation(){
   document.getElementById('loc-status').textContent = 'Position choisie';
   document.getElementById('loc-detail').textContent = selectedCommune + ' (saisie manuelle)';
   // Une commune choisie à la main n'a plus de rapport avec la position GPS
-  // réelle de l'utilisateur : l'option « adresse exacte » n'a plus de sens.
-  showExactPosRow(false);
+  // réelle de l'utilisateur : on n'utilise plus ses coordonnées précises.
+  myGpsLat = null; myGpsLng = null;
 }
 
 const URGENCY = ['Faible','Modérée','Élevée','Critique'];
@@ -2259,9 +2245,9 @@ async function handlePublish(e){
   if(!title){ toast('Ajoute un titre avant de publier'); return; }
   const cat = CATEGORIES.find(c=>c.id===selectedCat);
   const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
-  // Adresse exacte (GPS) si l'utilisateur l'a activée et qu'on a bien une
-  // position ; sinon on retombe sur le centre de la commune, comme avant.
-  const useExact = exactPositionEnabled && myGpsLat != null && myGpsLng != null;
+  // Adresse exacte (GPS) dès qu'une position a été détectée automatiquement ;
+  // sinon (saisie manuelle de la commune) on retombe sur le centre de la commune.
+  const useExact = myGpsLat != null && myGpsLng != null;
   const pinLat = useExact ? myGpsLat : (coord ? coord.lat : MARTINIQUE_CENTER[0]);
   const pinLng = useExact ? myGpsLng : (coord ? coord.lng : MARTINIQUE_CENTER[1]);
   let publishedRemotely = false;
@@ -2335,7 +2321,6 @@ async function handlePublish(e){
   selectedUrgency = 'Modérée'; renderUrgency();
   document.getElementById('urgency-block').style.display='none';
   document.getElementById('audio-block').style.display='none';
-  showExactPosRow(false);
   toast(isMerchantPost ? 'Promotion publiée — visible 7 jours !' : 'Signalement publié !');
   isMerchantPost = false;
   showScreen('accueil');
