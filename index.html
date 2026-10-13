@@ -1111,6 +1111,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
             <datalist id="commune-list"></datalist>
           </div>
           <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné</div>
+          <label id="exact-pos-row" style="display:none; align-items:center; gap:7px; margin-top:9px; font-size:12.5px; color:var(--ink); font-weight:700; cursor:pointer;">
+            <input type="checkbox" id="f-exact-pos" style="width:16px; height:16px; accent-color:var(--orange);" onchange="toggleExactPosition(this.checked)">
+            Épingler l'adresse exacte (position GPS précise)
+          </label>
         </div>
         <div id="urgency-block" style="display:none;">
           <div class="field-label">Niveau d'urgence</div>
@@ -1589,6 +1593,7 @@ async function loadRemotePosts(){
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
       photos: (row.photos && row.photos.length) ? row.photos : null, audio:null,
+      exactLat: row.exact_lat ?? null, exactLng: row.exact_lng ?? null,
       likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
       sponsored: !!row.is_sponsored,
@@ -1757,12 +1762,19 @@ let renderedMapPins = [];
 
 function buildRemoteMapPins(){
   return remotePosts
-    .filter(p => p.place && p.place !== '—')
+    .filter(p => (p.exactLat != null && p.exactLng != null) || (p.place && p.place !== '—'))
     .map(p => {
-      const coord = COMMUNE_COORDS[normalizeCommune(p.place)];
-      if(!coord) return null;
+      // Adresse exacte (GPS) si la publication en a une ; sinon centre de la commune.
+      let lat, lng;
+      if(p.exactLat != null && p.exactLng != null){
+        lat = p.exactLat; lng = p.exactLng;
+      } else {
+        const coord = COMMUNE_COORDS[normalizeCommune(p.place)];
+        if(!coord) return null;
+        lat = coord.lat; lng = coord.lng;
+      }
       return {
-        lat: coord.lat, lng: coord.lng, icon: PIN_EMOJI_MAP[p.cat] || '📍',
+        lat, lng, icon: PIN_EMOJI_MAP[p.cat] || '📍',
         name: p.title, place: p.place, desc: p.text || 'Aucune description pour l’instant.',
         photo: p.photo, color: p.color, isNew: true
       };
@@ -2036,11 +2048,28 @@ function populateCommuneLists(){
 }
 let selectedCommune = 'Fort-de-France';
 let locTimer;
+/* Position GPS précise du moment, gardée à part de selectedCommune (qui ne
+   retient que le nom de la commune). Permet d'épingler une publication sur
+   l'adresse exacte plutôt que sur le centre de la commune — utile pour un
+   événement ou un commerce à une adresse précise. */
+let myGpsLat = null, myGpsLng = null;
+let exactPositionEnabled = false;
+function showExactPosRow(show){
+  const row = document.getElementById('exact-pos-row');
+  row.style.display = show ? 'flex' : 'none';
+  if(!show){
+    exactPositionEnabled = false;
+    document.getElementById('f-exact-pos').checked = false;
+  }
+}
+function toggleExactPosition(checked){ exactPositionEnabled = checked; }
 function simulateLocate(){
   document.getElementById('loc-manual').style.display = 'none';
   document.getElementById('loc-box').style.display = 'flex';
   document.getElementById('loc-status').textContent = 'Localisation en cours…';
   document.getElementById('loc-detail').textContent = 'Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné';
+  myGpsLat = null; myGpsLng = null;
+  showExactPosRow(false);
   clearTimeout(locTimer);
   if(!navigator.geolocation){
     document.getElementById('loc-status').textContent = 'GPS indisponible';
@@ -2051,8 +2080,10 @@ function simulateLocate(){
   navigator.geolocation.getCurrentPosition(pos => {
     const nearest = nearestCommune(pos.coords.latitude, pos.coords.longitude);
     selectedCommune = nearest ? nearest.label : 'Fort-de-France';
+    myGpsLat = pos.coords.latitude; myGpsLng = pos.coords.longitude;
     document.getElementById('loc-status').textContent = 'Position détectée';
     document.getElementById('loc-detail').textContent = selectedCommune + ' (détection automatique)';
+    showExactPosRow(true);
   }, err => {
     document.getElementById('loc-status').textContent = 'Position indisponible';
     document.getElementById('loc-detail').textContent = 'Autorise la localisation ou choisis ta commune manuellement';
@@ -2073,6 +2104,9 @@ function confirmManualLocation(){
   document.getElementById('loc-box').style.display = 'flex';
   document.getElementById('loc-status').textContent = 'Position choisie';
   document.getElementById('loc-detail').textContent = selectedCommune + ' (saisie manuelle)';
+  // Une commune choisie à la main n'a plus de rapport avec la position GPS
+  // réelle de l'utilisateur : l'option « adresse exacte » n'a plus de sens.
+  showExactPosRow(false);
 }
 
 const URGENCY = ['Faible','Modérée','Élevée','Critique'];
@@ -2191,12 +2225,17 @@ async function handlePublish(e){
   if(!title){ toast('Ajoute un titre avant de publier'); return; }
   const cat = CATEGORIES.find(c=>c.id===selectedCat);
   const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
+  // Adresse exacte (GPS) si l'utilisateur l'a activée et qu'on a bien une
+  // position ; sinon on retombe sur le centre de la commune, comme avant.
+  const useExact = exactPositionEnabled && myGpsLat != null && myGpsLng != null;
+  const pinLat = useExact ? myGpsLat : (coord ? coord.lat : MARTINIQUE_CENTER[0]);
+  const pinLng = useExact ? myGpsLng : (coord ? coord.lng : MARTINIQUE_CENTER[1]);
   let publishedRemotely = false;
   // Tout le travail réseau est protégé : une erreur ici (réseau, Supabase,
   // etc.) ne doit jamais empêcher le retour à l'accueil en bas de fonction.
   try{
     if(sb && currentUserId){
-      const geoPoint = coord ? `POINT(${coord.lng} ${coord.lat})` : `POINT(${MARTINIQUE_CENTER[1]} ${MARTINIQUE_CENTER[0]})`;
+      const geoPoint = `POINT(${pinLng} ${pinLat})`;
       const insertPayload = {
         author_id: currentUserId,
         author_name: myPseudo,
@@ -2208,6 +2247,8 @@ async function handlePublish(e){
         commune: selectedCommune,
         urgency: selectedCat==='trafic' ? selectedUrgency : null,
         location: geoPoint,
+        exact_lat: useExact ? pinLat : null,
+        exact_lng: useExact ? pinLng : null,
         is_sponsored: isMerchantPost,
       };
       // Commerces et Événements peuvent recevoir une date de fin : la
@@ -2243,13 +2284,11 @@ async function handlePublish(e){
     // Publication restée locale (pas de backend partagé) : on pousse le pin nous-mêmes.
     // Si elle a été publiée côté Supabase, son pin apparaît automatiquement via
     // buildRemoteMapPins() (dérivé de remotePosts) — pas besoin de le dupliquer ici.
-    if(coord){
-      MAP_PINS.push({
-        lat: coord.lat, lng: coord.lng, icon: PIN_EMOJI_MAP[selectedCat] || '📍',
-        name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
-        photo: pendingPhoto, color: cat.color, isNew: true
-      });
-    }
+    MAP_PINS.push({
+      lat: pinLat, lng: pinLng, icon: PIN_EMOJI_MAP[selectedCat] || '📍',
+      name: title, place: selectedCommune, desc: desc || 'Aucune description pour l’instant.',
+      photo: pendingPhoto, color: cat.color, isNew: true
+    });
   }
   try{ renderMapMarkers(); } catch(err){ console.warn('Erreur affichage des pins', err); }
   activeCat = 'toutes';
@@ -2262,6 +2301,7 @@ async function handlePublish(e){
   selectedUrgency = 'Modérée'; renderUrgency();
   document.getElementById('urgency-block').style.display='none';
   document.getElementById('audio-block').style.display='none';
+  showExactPosRow(false);
   toast(isMerchantPost ? 'Promotion publiée — visible 7 jours !' : 'Signalement publié !');
   isMerchantPost = false;
   showScreen('accueil');
