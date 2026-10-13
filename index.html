@@ -2208,6 +2208,9 @@ function selectCommuneManually(){
   myGpsLat = null; myGpsLng = null;
   document.getElementById('loc-detail').textContent = selectedCommune + ' (commune choisie)';
 }
+function isIOSDevice(){
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 function useExactGpsPosition(){
   if(!navigator.geolocation){
     toast('La géolocalisation n’est pas disponible sur cet appareil ou ce navigateur');
@@ -2222,13 +2225,20 @@ function useExactGpsPosition(){
     document.getElementById('loc-detail').textContent = '📍 Position exacte activée — ' + selectedCommune;
     toast('Position GPS exacte activée');
   }, err => {
-    // code 1 = permission refusée (navigateur ou réglages de localisation du
-    // système) ; 2/3 = position indisponible ou délai dépassé.
-    const msg = err && err.code === 1
-      ? 'Autorisation refusée : active la localisation pour ce site dans les réglages de ton navigateur (et dans Réglages système > Confidentialité > Localisation sur Mac/iPhone)'
-      : 'Position indisponible, réessaie ou choisis ta commune ci-dessus';
+    // code 1 = permission refusée. Aucun site web ne peut ouvrir directement
+    // les réglages du téléphone (restriction de sécurité commune à tous les
+    // navigateurs, iOS comme Android) : on ne peut qu'expliquer le chemin à
+    // suivre, avec des étapes propres à chaque plateforme.
+    let msg;
+    if(err && err.code === 1){
+      msg = isIOSDevice()
+        ? 'Localisation refusée. Pour l’activer : Réglages > Confidentialité et sécurité > Service de localisation (vérifie qu’il est activé) > fais défiler jusqu’à Safari (ou Chrome) > choisis "Lors de l’utilisation de l’app". Reviens ensuite ici et réessaie.'
+        : 'Localisation refusée. Pour l’activer : appuie sur le 🔒 à côté de l’adresse du site dans le navigateur > Autorisations > Position > Autoriser. Sinon : Réglages du téléphone > Apps > Chrome > Autorisations > Position > Autoriser. Reviens ensuite ici et réessaie.';
+    } else {
+      msg = 'Position indisponible, réessaie ou choisis ta commune ci-dessus';
+    }
     document.getElementById('loc-detail').textContent = msg;
-    toast(msg);
+    toast(err && err.code === 1 ? 'Localisation refusée — suis les étapes affichées pour l’activer' : msg);
   }, {enableHighAccuracy:true, timeout:10000});
 }
 
