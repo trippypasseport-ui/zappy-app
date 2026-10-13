@@ -1679,7 +1679,7 @@ function renderPosts(){
     return;
   }
   list.innerHTML = shown.map(p => `
-    <div class="post-card ${p.cat==='trafic' && p.cleared ? 'cleared' : ''}">
+    <div class="post-card ${p.cat==='trafic' && p.cleared ? 'cleared' : ''}" onclick="openComments('${p.id}')" style="cursor:pointer;">
       <div class="post-main">
         <div class="post-top">
           <div class="avatar" style="background:${p.color}">${p.initial}</div>
@@ -1692,12 +1692,12 @@ function renderPosts(){
         ${p.sponsored ? `<span class="sponsor-badge">★ Sponsorisé</span>` : ''}
         <div class="post-title">${p.title}</div>
         <div class="post-text">${p.text}</div>
-        ${p.audio? `<audio controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;"></audio>` : ''}
+        ${p.audio? `<audio controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;" onclick="event.stopPropagation()"></audio>` : ''}
         <div class="post-actions">
-          <div class="action ${p.liked?'liked':''}" onclick="toggleLike('${p.id}')">${heartIcon(p.liked)}<span>${p.likes}</span></div>
-          <div class="action" onclick="openComments('${p.id}')">${commentIcon}<span>${p.commentCount}</span></div>
-          <div class="action" onclick="toast('Partagé !')">${shareIcon}<span>Partager</span></div>
-          ${p.cat==='trafic' && !p.cleared ? `<div class="clear-btn" onclick="confirmCleared('${p.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E9E5B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>C'est dégagé ?</span></div>` : ''}
+          <div class="action ${p.liked?'liked':''}" onclick="event.stopPropagation(); toggleLike('${p.id}')">${heartIcon(p.liked)}<span>${p.likes}</span></div>
+          <div class="action" onclick="event.stopPropagation(); openComments('${p.id}')">${commentIcon}<span>${p.commentCount}</span></div>
+          <div class="action" onclick="event.stopPropagation(); toast('Partagé !')">${shareIcon}<span>Partager</span></div>
+          ${p.cat==='trafic' && !p.cleared ? `<div class="clear-btn" onclick="event.stopPropagation(); confirmCleared('${p.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E9E5B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>C'est dégagé ?</span></div>` : ''}
         </div>
       </div>
       ${p.photos && p.photos.length>1
@@ -1782,6 +1782,18 @@ function buildRemoteMapPins(){
     .filter(Boolean);
 }
 
+/* Boutons "s'y rendre" (Waze / Google Maps) — ouvrent l'app installée sur le
+   téléphone si elle existe, sinon la version web, avec la destination déjà
+   renseignée. Réutilisé pour un pin de carte et pour une publication du fil. */
+function navLinksHtml(lat, lng){
+  if(lat == null || lng == null) return '';
+  const wazeUrl = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+  const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+  return `<div style="display:flex; gap:8px; margin:4px 0 2px;">
+    <a href="${wazeUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">🧭 Waze</a>
+    <a href="${mapsUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">📍 Maps</a>
+  </div>`;
+}
 function pinInfo(e, index){
   if(e) e.stopPropagation();
   const p = renderedMapPins[index];
@@ -1790,7 +1802,8 @@ function pinInfo(e, index){
   document.getElementById('comments-list').innerHTML = `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">📍 ${p.place}${p.isNew?' · <span style="color:var(--orange); font-weight:700;">Nouveau</span>':''}</div>
     ${p.photo? `<div style="width:100%; height:150px; border-radius:12px; overflow:hidden; margin-bottom:10px;"><img src="${p.photo}" style="width:100%; height:100%; object-fit:cover; display:block;"></div>` : ''}
-    <div style="font-size:13px; color:var(--ink); line-height:1.4;">${p.desc || 'Aucune description pour l’instant.'}</div>
+    <div style="font-size:13px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${p.desc || 'Aucune description pour l’instant.'}</div>
+    ${navLinksHtml(p.lat, p.lng)}
   `;
   document.getElementById('comment-form').style.display = 'none';
   document.getElementById('comments-overlay').classList.add('show');
@@ -1893,11 +1906,28 @@ function locateMe(){
 function renderComments(){
   const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(openPostId));
   if(!p) return;
-  document.getElementById('comments-title').textContent = p.commentCount + ' commentaire' + (p.commentCount>1?'s':'');
+  document.getElementById('comments-title').textContent = p.title || 'Publication';
   const shown = p.comments || [];
   const extra = p.commentCount - shown.length;
+  // En-tête : le contenu complet de la publication, comme un vrai "ouvrir la
+  // publication" (avant, ce panneau ne montrait que les commentaires).
+  const galleryHtml = p.photos && p.photos.length>1
+    ? `<div class="post-gallery" style="margin-bottom:10px;">${p.photos.map(ph=>`<img src="${ph}" alt="">`).join('')}</div>`
+    : (p.photo? `<div style="width:100%; height:150px; border-radius:12px; overflow:hidden; margin-bottom:10px;"><img src="${p.photo}" style="width:100%; height:100%; object-fit:cover; display:block;"></div>` : '');
+  let navLat = p.exactLat != null ? p.exactLat : null;
+  let navLng = p.exactLng != null ? p.exactLng : null;
+  if(navLat == null || navLng == null){
+    const navCoord = COMMUNE_COORDS[normalizeCommune(p.place)];
+    if(navCoord){ navLat = navCoord.lat; navLng = navCoord.lng; }
+  }
+  const navHtml = navLinksHtml(navLat, navLng);
   document.getElementById('comments-list').innerHTML =
-    shown.map(c => `
+    `<div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">📍 ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? ` · ⏱ ${DURATION_HINTS[p.urgency]||''}` : ''}</div>`
+    + galleryHtml
+    + `<div style="font-size:13.5px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${p.text}</div>`
+    + navHtml
+    + `<div style="font-size:11.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.3px; margin:14px 0 8px;">${p.commentCount} commentaire${p.commentCount>1?'s':''}</div>`
+    + shown.map(c => `
       <div class="comment-row">
         <div class="avatar" style="background:#78909C; flex-shrink:0;">${c.author[0]}</div>
         <div><div class="comment-author">${c.author}</div><div class="comment-text">${c.text}</div></div>
