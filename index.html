@@ -1233,6 +1233,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="stat-box"><div class="stat-num" id="adm-revenue">0€</div><div class="stat-label">Revenus / mois</div></div>
       </div>
 
+      <div class="section-tag">Paiement Stripe</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface); font-size:12.5px; color:var(--muted); line-height:1.5;">
+        Les paiements des abonnements commerçants passent par Stripe. Pour des raisons de sécurité, la clé secrète Stripe ne se configure pas depuis cet écran (elle ne doit jamais transiter par l'app ni par une base de données lisible) : elle est ajoutée directement dans l'espace sécurisé du serveur, en dehors de l'application.<br><br>
+        Quand le compte Stripe est prêt, transmets-le pour l'activation finale — webhook à renseigner dans Stripe :<br>
+        <code style="font-size:11px; background:var(--surface-2); padding:2px 5px; border-radius:4px; word-break:break-all;">https://idcagubpyhrilnyaoaha.supabase.co/functions/v1/stripe-webhook</code>
+      </div>
+
       <div class="section-tag">Tarifs des abonnements (affiche Espace commerçant)</div>
       <div class="admin-list" id="admin-plan-tiers"></div>
 
@@ -1519,6 +1526,11 @@ async function initBackend(){
     const { error: profileError } = await sb.from('profiles').upsert({ id: currentUserId, pseudo: myPseudo }, { onConflict: 'id' });
     if(profileError){ console.warn('Création du profil impossible', profileError); }
     await loadRemotePosts();
+    await loadMyPlan();
+    sb.channel('public:merchant_subscriptions')
+      .on('postgres_changes', {event:'*', schema:'public', table:'merchant_subscriptions', filter:'user_id=eq.'+currentUserId}, () => { loadMyPlan(); })
+      .subscribe();
+    handleCheckoutRedirect();
     sb.channel('public:publications')
       .on('postgres_changes', {event:'*', schema:'public', table:'publications'}, () => { loadRemotePosts(); })
       .subscribe();
@@ -2576,19 +2588,48 @@ function loadPlanTierPrices(){
   }catch(e){ /* repli silencieux */ }
 }
 
-/* ---- Abonnement commerçant de CET utilisateur (prototype : simulation locale,
-   pas de vrai paiement) ---- */
+/* ---- Abonnement commerçant de CET utilisateur ----
+   Source de vérité : la table merchant_subscriptions, mise à jour uniquement
+   par le webhook Stripe (paiement réellement confirmé) — jamais par le client. */
 let myPlan = null;
-function loadMyPlan(){
-  try{ myPlan = localStorage.getItem('zapy_my_plan') || null; }catch(e){ myPlan = null; }
+async function loadMyPlan(){
+  myPlan = null;
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('merchant_subscriptions').select('plan_id, status').eq('user_id', currentUserId).maybeSingle();
+  if(!error && data && data.status === 'active') myPlan = data.plan_id;
+  renderPricingList();
 }
-function subscribeToPlan(id){
+/* Au retour de la page de paiement Stripe, affiche un message et nettoie
+   l'URL (sans recharger). Le vrai statut arrive via loadMyPlan() /
+   le webhook Stripe — ce message est juste un retour visuel immédiat. */
+function handleCheckoutRedirect(){
+  const params = new URLSearchParams(window.location.search);
+  const checkout = params.get('checkout');
+  if(!checkout) return;
+  if(checkout === 'success'){ toast('Paiement confirmé — activation en cours…'); showScreen('commercant'); setTimeout(loadMyPlan, 2000); }
+  if(checkout === 'cancel'){ toast('Paiement annulé'); showScreen('commercant'); }
+  const url = new URL(window.location.href);
+  url.searchParams.delete('checkout');
+  window.history.replaceState({}, '', url.toString());
+}
+async function subscribeToPlan(id){
   const t = PLAN_TIERS.find(x=>x.id===id);
   if(!t) return;
-  myPlan = id;
-  try{ localStorage.setItem('zapy_my_plan', id); }catch(e){ /* repli silencieux */ }
-  renderPricingList();
-  toast('Abonnement « ' + t.name + ' » activé — tu peux publier une promotion');
+  if(!sb || !currentUserId){ toast('Connexion au serveur en cours, réessaie dans un instant'); return; }
+  toast('Redirection vers le paiement sécurisé…');
+  const { data, error } = await sb.functions.invoke('create-checkout-session', {
+    body: { plan_id: t.id, plan_name: t.name, price: t.price }
+  });
+  if(error || !data?.url){
+    if(data?.error === 'not_configured'){
+      toast('Le paiement Stripe n’est pas encore configuré par l’administrateur');
+    } else {
+      toast('Erreur lors de la préparation du paiement, réessaie');
+    }
+    console.warn('create-checkout-session', error || data);
+    return;
+  }
+  window.location.href = data.url;
 }
 function startMerchantPublish(){
   if(!myPlan){
@@ -2753,7 +2794,6 @@ function toast(msg){
 
 populateCommuneLists();
 loadPlanTierPrices();
-loadMyPlan();
 renderPricingList();
 renderCatRow();
 renderPosts();
