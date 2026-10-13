@@ -1230,6 +1230,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <div class="menu-label">Aide &amp; support</div>
           <span style="color:var(--muted)">›</span>
         </div>
+        <div class="menu-row" onclick="openAdminPasswordProfile()">
+          <div class="menu-ico" style="background:#5C6BC0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg></div>
+          <div class="menu-label">Mot de passe administrateur</div>
+          <span style="color:var(--muted)">›</span>
+        </div>
         <div class="menu-row" onclick="logout()">
           <div class="menu-ico" style="background:#D32F2F"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
           <div class="menu-label">Se déconnecter</div>
@@ -1337,6 +1342,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="stat-box"><div class="stat-num" id="adm-users">0</div><div class="stat-label">Utilisateurs</div></div>
         <div class="stat-box"><div class="stat-num" id="adm-pubs">0</div><div class="stat-label">Publications actives</div></div>
         <div class="stat-box"><div class="stat-num" id="adm-revenue">0€</div><div class="stat-label">Revenus / mois</div></div>
+      </div>
+
+      <div class="section-tag">Activité (affluence)</div>
+      <div class="stat-row">
+        <div class="stat-box"><div class="stat-num" id="adm-new-users">0</div><div class="stat-label">Nouveaux membres (7j)</div></div>
+        <div class="stat-box"><div class="stat-num" id="adm-new-pubs">0</div><div class="stat-label">Publications (7j)</div></div>
+      </div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Publications actives par catégorie</div>
+        <div id="adm-cat-breakdown" style="font-size:12.5px; color:var(--ink);"></div>
       </div>
 
       <div class="section-tag">Sécurité</div>
@@ -1648,6 +1663,33 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </div>
   </div>
+
+  <!-- MOT DE PASSE ADMINISTRATEUR, accessible depuis Profil → Préférences.
+       Tant que personne n'est encore administrateur (profiles.role='admin'),
+       n'importe quel utilisateur peut en choisir un et le devenir
+       (claim_admin_password, une seule fois) : plus besoin qu'un mot de
+       passe par défaut lui soit communiqué. Une fois un administrateur
+       établi, ce même écran demande l'ancien mot de passe pour le changer
+       (change_admin_password). -->
+  <div class="comments-overlay" id="admin-password-overlay" onclick="if(event.target===this) closeAdminPasswordProfile()">
+    <div class="comments-sheet" style="max-height:60%;">
+      <div class="comments-head">
+        <span id="adm-pwd-title">Mot de passe administrateur</span>
+        <div class="icon-btn" onclick="closeAdminPasswordProfile()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        <div id="adm-pwd-sub" style="font-size:12px; color:var(--muted); margin-bottom:12px;"></div>
+        <div id="adm-pwd-old-wrap" style="display:none;">
+          <div class="field-label">Mot de passe actuel</div>
+          <input type="password" id="adm-pwd-old" autocomplete="current-password" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 12px;">
+        </div>
+        <div class="field-label">Nouveau mot de passe</div>
+        <input type="password" id="adm-pwd-new" autocomplete="new-password" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 4px;">
+        <div id="adm-pwd-error" style="font-size:11.5px; color:#D32F2F; text-align:left; min-height:14px; margin-bottom:8px;"></div>
+        <button type="button" class="submit-btn" id="adm-pwd-submit-btn" style="margin-top:4px; width:100%;" onclick="submitAdminPasswordProfile()">Créer mon mot de passe</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1796,23 +1838,34 @@ async function submitOnboarding(){
       const pseudo = document.getElementById('onboarding-pseudo').value.trim();
       if(!pseudo){ errEl.textContent = 'Indique un nom.'; return; }
       if(password.length < 6){ errEl.textContent = 'Le mot de passe doit faire au moins 6 caractères.'; return; }
+      // Le pseudo choisi est systématiquement enregistré dans les métadonnées
+      // du compte (options.data / data), pas seulement en localStorage : ça
+      // survit même si la confirmation par email est cliquée sur un AUTRE
+      // appareil ou navigateur que celui de l'inscription (voir initBackend(),
+      // qui le relit en priorité depuis session.user.user_metadata.pseudo).
       let { data: { session: existing } } = await sb.auth.getSession();
       let result;
       if(existing && existing.user && existing.user.is_anonymous){
         // Transforme une éventuelle session anonyme déjà en cours sur cet
         // appareil (tests précédents) en compte permanent SANS changer
         // d'id : le profil et les publications déjà créés restent attachés.
-        result = await sb.auth.updateUser({ email, password });
+        // updateUser() garde la session déjà active immédiatement (son
+        // objet de réponse ne contient d'ailleurs pas de "session" — à la
+        // différence de signUp() — donc on ne doit PAS tester
+        // result.data.session ici, seulement result.error) ; la nouvelle
+        // adresse email devra tout de même être confirmée via le lien reçu.
+        result = await sb.auth.updateUser({ email, password, data: { pseudo } });
+        if(result.error){ errEl.textContent = translateAuthError(result.error); return; }
       } else {
-        result = await sb.auth.signUp({ email, password });
-      }
-      if(result.error){ errEl.textContent = translateAuthError(result.error); return; }
-      if(!result.data.session){
-        // Confirmation par email activée côté Supabase : pas de session
-        // immédiate, il faut d'abord cliquer le lien reçu par email.
-        toast('Compte créé — vérifie ta boîte mail pour confirmer, puis connecte-toi.');
-        setOnboardingMode('login');
-        return;
+        result = await sb.auth.signUp({ email, password, options: { data: { pseudo } } });
+        if(result.error){ errEl.textContent = translateAuthError(result.error); return; }
+        if(!result.data.session){
+          // Confirmation par email activée côté Supabase : pas de session
+          // immédiate, il faut d'abord cliquer le lien reçu par email.
+          toast('Compte créé — vérifie ta boîte mail pour confirmer, puis connecte-toi.');
+          setOnboardingMode('login');
+          return;
+        }
       }
       try{ localStorage.setItem('zapy_pseudo', pseudo); }catch(e){}
       document.getElementById('onboarding-overlay').style.display = 'none';
@@ -1939,6 +1992,62 @@ async function changeAdminPassword(){
   }
 }
 
+/* Mot de passe administrateur depuis Profil : même mécanisme que la section
+   "Sécurité" de screen-admin, mais accessible sans avoir déjà déverrouillé
+   l'administration — utile la toute première fois, puisque tant que
+   personne n'est encore admin, claim_admin_password() permet de choisir un
+   mot de passe sans en connaître un ancien. */
+let adminPasswordIsChangeMode = false;
+async function openAdminPasswordProfile(){
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
+  const { data } = await sb.from('profiles').select('role').eq('id', currentUserId).maybeSingle();
+  const isAdmin = data && data.role === 'admin';
+  adminPasswordIsChangeMode = isAdmin;
+  document.getElementById('adm-pwd-old-wrap').style.display = isAdmin ? 'block' : 'none';
+  document.getElementById('adm-pwd-title').textContent = isAdmin ? 'Changer le mot de passe administrateur' : 'Créer le mot de passe administrateur';
+  document.getElementById('adm-pwd-sub').textContent = isAdmin
+    ? 'Tu es déjà administrateur. Indique ton mot de passe actuel pour le changer.'
+    : 'Personne n\'a encore créé de mot de passe administrateur. Choisis-en un : tu deviendras administrateur de l\'app (accès via …/#admin).';
+  document.getElementById('adm-pwd-submit-btn').textContent = isAdmin ? 'Changer le mot de passe' : 'Créer mon mot de passe';
+  document.getElementById('adm-pwd-old').value = '';
+  document.getElementById('adm-pwd-new').value = '';
+  document.getElementById('adm-pwd-error').textContent = '';
+  document.getElementById('admin-password-overlay').classList.add('show');
+}
+function closeAdminPasswordProfile(){
+  document.getElementById('admin-password-overlay').classList.remove('show');
+}
+async function submitAdminPasswordProfile(){
+  const errEl = document.getElementById('adm-pwd-error');
+  errEl.textContent = '';
+  const newPwd = document.getElementById('adm-pwd-new').value;
+  if(!newPwd || newPwd.trim().length < 4){ errEl.textContent = 'Le mot de passe doit faire au moins 4 caractères.'; return; }
+  const btn = document.getElementById('adm-pwd-submit-btn');
+  btn.disabled = true;
+  try{
+    let data, error;
+    if(adminPasswordIsChangeMode){
+      const oldPwd = document.getElementById('adm-pwd-old').value;
+      if(!oldPwd){ errEl.textContent = 'Indique ton mot de passe actuel.'; return; }
+      ({ data, error } = await sb.rpc('change_admin_password', { old_password: oldPwd, new_password: newPwd }));
+    } else {
+      ({ data, error } = await sb.rpc('claim_admin_password', { new_password: newPwd }));
+    }
+    if(error){ console.warn('Erreur mot de passe administrateur', error); errEl.textContent = 'Erreur, réessaie.'; return; }
+    if(data === true){
+      closeAdminPasswordProfile();
+      toast(adminPasswordIsChangeMode ? 'Mot de passe administrateur changé' : 'Mot de passe administrateur créé — tu es maintenant administrateur');
+    } else {
+      errEl.textContent = adminPasswordIsChangeMode ? 'Mot de passe actuel incorrect, ou nouveau trop court' : 'Un administrateur existe déjà, ou mot de passe trop court';
+    }
+  } catch(e){
+    console.warn('Erreur réseau', e);
+    errEl.textContent = 'Erreur réseau, réessaie.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 let backendInitialized = false;
 async function initBackend(){
   // Idempotent : peut maintenant être appelé deux fois lors du flux "mot de
@@ -1950,7 +2059,6 @@ async function initBackend(){
   backendInitialized = true;
   try{
     if(!sb){ console.warn('Supabase JS non chargé'); return; }
-    myPseudo = getPseudo();
     let { data: { session } } = await sb.auth.getSession();
     if(!session){
       // Filet de sécurité : ne doit en principe arriver que pour les liens
@@ -1961,6 +2069,19 @@ async function initBackend(){
       const { data, error } = await sb.auth.signInAnonymously();
       if(error){ console.warn('Connexion anonyme impossible', error); return; }
       session = data.session;
+    }
+    // Le pseudo choisi à l'inscription est stocké dans les métadonnées du
+    // compte (voir submitOnboarding()) — on le relit en priorité depuis là,
+    // ce qui marche même si la confirmation par email a été cliquée sur un
+    // autre appareil/navigateur que celui où le pseudo a été tapé (où
+    // localStorage ne contient donc rien). À défaut, on retombe sur le
+    // pseudo déjà en cache localement, ou sur un pseudo généré au hasard.
+    const metaPseudo = session.user.user_metadata && session.user.user_metadata.pseudo;
+    if(metaPseudo){
+      myPseudo = metaPseudo;
+      try{ localStorage.setItem('zapy_pseudo', myPseudo); }catch(e){}
+    } else {
+      myPseudo = getPseudo();
     }
     currentUserId = session.user.id;
     // Le profil doit exister avant toute publication : author_id référence profiles(id).
@@ -3443,7 +3564,11 @@ let merchants = [
 
 /* ---- Tarifs des 3 formules d'abonnement (affiche "Espace commerçant") ----
    Modifiables par l'admin : ça change le prix affiché pour les FUTURS souscripteurs,
-   pas le prix déjà verrouillé des commerçants déjà abonnés (voir `merchants` ci-dessus). */
+   pas le prix déjà verrouillé des commerçants déjà abonnés (voir `merchants` ci-dessus).
+   Stockés côté serveur (table app_settings, via get_plan_tier_prices() /
+   set_plan_tier_price()) et non plus en localStorage : un changement fait par
+   l'administrateur doit être visible par tous les utilisateurs, sur tous les
+   appareils — pas seulement dans le navigateur où le changement a été fait. */
 let PLAN_TIERS = [
   {id:'decouverte', name:'Découverte', price:29, featured:false,
    feats:['1 publication sponsorisée active', 'Badge « Sponsorisé »', 'Visible dans votre commune']},
@@ -3452,11 +3577,18 @@ let PLAN_TIERS = [
   {id:'partenaire', name:'Partenaire', price:99, featured:false,
    feats:['Publications illimitées', 'Badge « Commerce vérifié »', 'Notifications push aux abonnés']},
 ];
-function loadPlanTierPrices(){
+async function loadPlanTierPrices(){
+  if(!sb) return;
   try{
-    const saved = JSON.parse(localStorage.getItem('zapy_plan_tier_prices') || '{}');
-    PLAN_TIERS.forEach(t => { if(saved[t.id] != null) t.price = saved[t.id]; });
-  }catch(e){ /* repli silencieux */ }
+    const { data, error } = await sb.rpc('get_plan_tier_prices');
+    if(error || !data) return;
+    const byKey = {};
+    data.forEach(row => { byKey[row.key] = row.value; });
+    PLAN_TIERS.forEach(t => {
+      const v = byKey['plan_price_' + t.id];
+      if(v != null){ const n = parseFloat(v); if(!isNaN(n)) t.price = n; }
+    });
+  }catch(e){ /* repli silencieux : garde les prix par défaut ci-dessus */ }
 }
 
 /* ---- Abonnement commerçant de CET utilisateur ----
@@ -3513,19 +3645,18 @@ function startMerchantPublish(){
   selectFormCat('commerces');
   isMerchantPost = true;
 }
-function editPlanTierPrice(id){
+async function editPlanTierPrice(id){
   const t = PLAN_TIERS.find(x=>x.id===id);
   if(!t) return;
   const input = prompt('Nouveau prix mensuel pour la formule "' + t.name + '" (en €) :', t.price);
   if(input === null) return;
   const price = parseFloat(input.replace(',', '.'));
   if(isNaN(price) || price < 0){ toast('Prix invalide'); return; }
-  t.price = Math.round(price * 100) / 100;
-  try{
-    const saved = JSON.parse(localStorage.getItem('zapy_plan_tier_prices') || '{}');
-    saved[t.id] = t.price;
-    localStorage.setItem('zapy_plan_tier_prices', JSON.stringify(saved));
-  }catch(e){ /* repli silencieux : le changement reste actif pour cette session */ }
+  const rounded = Math.round(price * 100) / 100;
+  if(!sb){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const { data, error } = await sb.rpc('set_plan_tier_price', { tier_id: t.id, new_price: rounded });
+  if(error || data !== true){ console.warn('Erreur changement de tarif', error); toast('Erreur, réessaie'); return; }
+  await loadPlanTierPrices();
   renderAdmin();
   renderPricingList();
   toast('Tarif "' + t.name + '" mis à jour — ' + t.price + '€/mois');
@@ -3582,11 +3713,46 @@ let adminUsersList = [
   {id:5, name:'WifiGratuit972', reports:4, blocked:false},
 ];
 
-function renderAdmin(){
-  document.getElementById('adm-users').textContent = totalUsers.toLocaleString('fr-FR');
-  document.getElementById('adm-pubs').textContent = posts.length;
-  const revenue = merchants.reduce((s,m)=>s+m.price,0);
-  document.getElementById('adm-revenue').textContent = revenue + '€';
+async function renderAdmin(){
+  // Statistiques réelles (comptes, publications, revenus, affluence) — à la
+  // différence des listes plus bas (adminUsersList, merchants) qui restent
+  // pour l'instant des données de démonstration pour la modération/les
+  // factures, pas encore branchées sur les tables réelles.
+  if(sb){
+    try{
+      const { count: userCount } = await sb.from('profiles').select('*', {count:'exact', head:true});
+      if(userCount != null) document.getElementById('adm-users').textContent = userCount.toLocaleString('fr-FR');
+    }catch(e){ console.warn('Stat utilisateurs indisponible', e); }
+    try{
+      const sevenDaysAgo = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+      const { count: newUserCount } = await sb.from('profiles').select('*', {count:'exact', head:true}).gte('created_at', sevenDaysAgo);
+      if(newUserCount != null) document.getElementById('adm-new-users').textContent = newUserCount.toLocaleString('fr-FR');
+    }catch(e){ console.warn('Stat nouveaux membres indisponible', e); }
+    try{
+      const { data: subs } = await sb.from('merchant_subscriptions').select('plan_id, status').eq('status', 'active');
+      const revenue = (subs||[]).reduce((s, sub) => {
+        const tier = PLAN_TIERS.find(t => t.id === sub.plan_id);
+        return s + (tier ? tier.price : 0);
+      }, 0);
+      document.getElementById('adm-revenue').textContent = revenue + '€';
+    }catch(e){ console.warn('Stat revenus indisponible', e); }
+  }
+  document.getElementById('adm-pubs').textContent = remotePosts.length;
+  const sevenDaysAgoMs = Date.now() - 7*24*60*60*1000;
+  const newPubsCount = remotePosts.filter(p => p.createdAt && new Date(p.createdAt).getTime() > sevenDaysAgoMs).length;
+  document.getElementById('adm-new-pubs').textContent = newPubsCount;
+  const catCounts = {};
+  remotePosts.forEach(p => { catCounts[p.cat] = (catCounts[p.cat]||0) + 1; });
+  const catBreakdownEl = document.getElementById('adm-cat-breakdown');
+  if(catBreakdownEl){
+    const entries = Object.entries(catCounts).sort((a,b) => b[1]-a[1]);
+    catBreakdownEl.innerHTML = entries.length
+      ? entries.map(([catId, count]) => {
+          const meta = CATEGORIES.find(c => c.id === catId);
+          return `<div style="display:flex; justify-content:space-between; padding:3px 0;"><span>${meta ? meta.label : catId}</span><span style="font-weight:700;">${count}</span></div>`;
+        }).join('')
+      : '<span style="color:var(--muted);">Aucune publication pour l\'instant</span>';
+  }
 
   document.getElementById('admin-plan-tiers').innerHTML = PLAN_TIERS.map(t => `
     <div class="admin-row">
@@ -3664,7 +3830,7 @@ function toast(msg){
 }
 
 populateCommuneLists();
-loadPlanTierPrices();
+loadPlanTierPrices().then(renderPricingList);
 renderPricingList();
 renderCatRow();
 renderPosts();
