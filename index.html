@@ -986,18 +986,25 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
 <div class="phone">
   <!-- IDENTIFICATION (premier lancement) : bloque l'accès à l'app tant que
-       l'utilisateur n'a pas choisi un nom. Remplace l'ancien "mode démo" qui
+       l'utilisateur n'a pas de compte. Remplace l'ancien "mode démo" qui
        connectait silencieusement tout le monde sous un pseudo auto-généré
-       (TesteurXXX972) sans qu'on sache qui est qui. Pas d'écran "Inscription"
-       séparé : ce seul champ sert à la fois d'identification et de création
-       de profil, un compte complet n'étant pas nécessaire ici. -->
-  <div id="onboarding-overlay" style="display:none; position:absolute; inset:0; z-index:500; background:var(--surface); flex-direction:column; align-items:center; justify-content:center; padding:32px 26px; text-align:center;">
-    <div class="logo-row logo" style="font-size:40px; margin-bottom:8px;"><span class="zap">Zap</span><span class="y">y</span></div>
-    <div style="font-size:13.5px; color:var(--muted); margin-bottom:30px; max-width:260px;">L'info locale de la Martinique, en temps réel.</div>
+       (TesteurXXX972) sans qu'on sache qui est qui — maintenant un vrai
+       compte email + mot de passe (voir setOnboardingMode()/submitOnboarding()). -->
+  <div id="onboarding-overlay" style="display:none; position:absolute; inset:0; z-index:500; background:var(--surface); flex-direction:column; align-items:center; justify-content:center; padding:32px 26px; text-align:center; overflow-y:auto;">
+    <div class="logo-row logo" style="font-size:38px; margin-bottom:6px;"><span class="zap">Zap</span><span class="y">y</span></div>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:20px; max-width:260px;">L'info locale de la Martinique, en temps réel.</div>
     <div style="width:100%; max-width:280px;">
-      <div style="font-size:12.5px; font-weight:700; color:var(--ink); text-align:left; margin-bottom:6px;">Comment veux-tu qu'on t'appelle ?</div>
-      <input type="text" id="onboarding-pseudo" placeholder="Ex : Marie972" maxlength="30" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:16px;" onkeydown="if(event.key==='Enter') submitOnboarding()">
-      <button type="button" class="submit-btn" style="width:100%;" onclick="submitOnboarding()">S'identifier</button>
+      <div style="display:flex; border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:16px;">
+        <button type="button" id="onb-tab-signup" onclick="setOnboardingMode('signup')" style="flex:1; border:none; padding:10px; font-family:inherit; font-size:12.5px; font-weight:800; cursor:pointer; background:var(--orange); color:#fff;">Créer un compte</button>
+        <button type="button" id="onb-tab-login" onclick="setOnboardingMode('login')" style="flex:1; border:none; padding:10px; font-family:inherit; font-size:12.5px; font-weight:800; cursor:pointer; background:transparent; color:var(--ink);">Se connecter</button>
+      </div>
+      <div id="onb-pseudo-field">
+        <input type="text" id="onboarding-pseudo" placeholder="Comment veux-tu qu'on t'appelle ?" maxlength="30" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:10px;">
+      </div>
+      <input type="email" id="onboarding-email" placeholder="Email" autocomplete="email" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:10px;">
+      <input type="password" id="onboarding-password" placeholder="Mot de passe" autocomplete="new-password" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:6px;" onkeydown="if(event.key==='Enter') submitOnboarding()">
+      <div id="onb-error" style="font-size:11.5px; color:#D32F2F; text-align:left; min-height:14px; margin-bottom:8px;"></div>
+      <button type="button" class="submit-btn" id="onb-submit-btn" style="width:100%;" onclick="submitOnboarding()">Créer mon compte</button>
     </div>
   </div>
 
@@ -1189,6 +1196,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="menu-row" onclick="toast('Aide & support — à venir')">
           <div class="menu-ico" style="background:#78909C"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 3.5"/><circle cx="12" cy="17" r="0.6" fill="#fff" stroke="none"/></svg></div>
           <div class="menu-label">Aide &amp; support</div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+        <div class="menu-row" onclick="logout()">
+          <div class="menu-ico" style="background:#D32F2F"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
+          <div class="menu-label">Se déconnecter</div>
           <span style="color:var(--muted)">›</span>
         </div>
       </div>
@@ -1649,7 +1661,10 @@ let activeCat = 'toutes';
 /* ---- Backend partagé (Supabase) ---- */
 const SUPABASE_URL = 'https://idcagubpyhrilnyaoaha.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkY2FndWJweWhyaWxueWFvYWhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk4NTk4NDksImV4cCI6MjEwNTQzNTg0OX0.tsjeT6uaBLZugxVJpLsdVWwXqZLP7HmwPfKlV3HWEyw';
-let sb = null;
+// Créé tout de suite (pas seulement dans initBackend()) : le formulaire
+// d'identification (inscription/connexion) a besoin d'appeler Supabase
+// Auth AVANT que le reste de l'app ne démarre.
+let sb = (typeof supabase !== 'undefined') ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 let currentUserId = null;
 let myPseudo = null;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
@@ -1693,17 +1708,95 @@ function getPseudo(){
   return p;
 }
 
-/* Identification au premier lancement : tant qu'aucun pseudo n'est
-   enregistré, l'app reste bloquée sur onboarding-overlay (voir son HTML)
-   et initBackend() n'est pas encore appelé — voir la séquence d'amorçage
-   tout en bas du script. */
-function submitOnboarding(){
-  const input = document.getElementById('onboarding-pseudo');
-  const val = input.value.trim();
-  if(!val){ toast('Indique un nom pour continuer'); return; }
-  try{ localStorage.setItem('zapy_pseudo', val); }catch(e){}
-  document.getElementById('onboarding-overlay').style.display = 'none';
-  initBackend().then(routeFromHash);
+/* Identification au premier lancement : tant qu'aucune session n'est
+   active, l'app reste bloquée sur onboarding-overlay (voir son HTML) et
+   initBackend() n'est pas encore appelé — voir la séquence d'amorçage tout
+   en bas du script. Vrai compte email + mot de passe (plus de connexion
+   anonyme silencieuse pour le flux normal ; elle reste en filet de
+   sécurité dans initBackend() pour les liens #admin / #commerce). */
+let onboardingMode = 'signup';
+function setOnboardingMode(mode){
+  onboardingMode = mode;
+  const isSignup = mode === 'signup';
+  document.getElementById('onb-tab-signup').style.background = isSignup ? 'var(--orange)' : 'transparent';
+  document.getElementById('onb-tab-signup').style.color = isSignup ? '#fff' : 'var(--ink)';
+  document.getElementById('onb-tab-login').style.background = isSignup ? 'transparent' : 'var(--orange)';
+  document.getElementById('onb-tab-login').style.color = isSignup ? 'var(--ink)' : '#fff';
+  document.getElementById('onb-pseudo-field').style.display = isSignup ? 'block' : 'none';
+  document.getElementById('onb-submit-btn').textContent = isSignup ? 'Créer mon compte' : 'Se connecter';
+  document.getElementById('onboarding-password').setAttribute('autocomplete', isSignup ? 'new-password' : 'current-password');
+  document.getElementById('onb-error').textContent = '';
+}
+function translateAuthError(error){
+  const msg = (error && error.message) || '';
+  if(/already registered|already exists|User already registered/i.test(msg)) return 'Un compte existe déjà avec cet email — connecte-toi plutôt.';
+  if(/invalid login credentials/i.test(msg)) return 'Email ou mot de passe incorrect.';
+  if(/password.*(6|least|short)/i.test(msg)) return 'Le mot de passe doit faire au moins 6 caractères.';
+  if(/email.*invalid|unable to validate email/i.test(msg)) return 'Adresse email invalide.';
+  return msg ? 'Erreur : ' + msg : 'Erreur, réessaie.';
+}
+async function submitOnboarding(){
+  const errEl = document.getElementById('onb-error');
+  errEl.textContent = '';
+  const email = document.getElementById('onboarding-email').value.trim();
+  const password = document.getElementById('onboarding-password').value;
+  if(!sb){ errEl.textContent = 'Connexion indisponible, réessaie plus tard.'; return; }
+  if(!email || !password){ errEl.textContent = 'Indique un email et un mot de passe.'; return; }
+  const btn = document.getElementById('onb-submit-btn');
+  btn.disabled = true;
+  try{
+    if(onboardingMode === 'signup'){
+      const pseudo = document.getElementById('onboarding-pseudo').value.trim();
+      if(!pseudo){ errEl.textContent = 'Indique un nom.'; return; }
+      if(password.length < 6){ errEl.textContent = 'Le mot de passe doit faire au moins 6 caractères.'; return; }
+      let { data: { session: existing } } = await sb.auth.getSession();
+      let result;
+      if(existing && existing.user && existing.user.is_anonymous){
+        // Transforme une éventuelle session anonyme déjà en cours sur cet
+        // appareil (tests précédents) en compte permanent SANS changer
+        // d'id : le profil et les publications déjà créés restent attachés.
+        result = await sb.auth.updateUser({ email, password });
+      } else {
+        result = await sb.auth.signUp({ email, password });
+      }
+      if(result.error){ errEl.textContent = translateAuthError(result.error); return; }
+      if(!result.data.session){
+        // Confirmation par email activée côté Supabase : pas de session
+        // immédiate, il faut d'abord cliquer le lien reçu par email.
+        toast('Compte créé — vérifie ta boîte mail pour confirmer, puis connecte-toi.');
+        setOnboardingMode('login');
+        return;
+      }
+      try{ localStorage.setItem('zapy_pseudo', pseudo); }catch(e){}
+      document.getElementById('onboarding-overlay').style.display = 'none';
+      initBackend().then(routeFromHash);
+    } else {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password });
+      if(error){ errEl.textContent = translateAuthError(error); return; }
+      // Récupère le pseudo déjà enregistré pour ce compte (utile si c'est un
+      // autre appareil/navigateur que celui où il avait été choisi).
+      const { data: profileRow } = await sb.from('profiles').select('pseudo').eq('id', data.user.id).maybeSingle();
+      if(profileRow && profileRow.pseudo){
+        try{ localStorage.setItem('zapy_pseudo', profileRow.pseudo); }catch(e){}
+      }
+      document.getElementById('onboarding-overlay').style.display = 'none';
+      initBackend().then(routeFromHash);
+    }
+  } catch(e){
+    console.warn('Erreur identification', e);
+    errEl.textContent = 'Erreur réseau, réessaie.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+/* Déconnexion : on efface le pseudo local et on recharge la page plutôt que
+   de ré-initialiser tout l'état en mémoire à la main (remotePosts, cartes,
+   abonnements temps réel…) — la séquence d'amorçage du bas de page
+   réaffichera alors onboarding-overlay normalement. */
+async function logout(){
+  if(sb){ try{ await sb.auth.signOut(); }catch(e){} }
+  try{ localStorage.removeItem('zapy_pseudo'); }catch(e){}
+  location.reload();
 }
 
 /* Lien dédié (…/#admin, …/#commerce) : ouvre directement le bon écran au
@@ -1741,11 +1834,15 @@ async function changeAdminPassword(){
 
 async function initBackend(){
   try{
-    if(typeof supabase === 'undefined'){ console.warn('Supabase JS non chargé'); return; }
-    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    if(!sb){ console.warn('Supabase JS non chargé'); return; }
     myPseudo = getPseudo();
     let { data: { session } } = await sb.auth.getSession();
     if(!session){
+      // Filet de sécurité : ne doit en principe arriver que pour les liens
+      // directs #admin / #commerce (réservés à l'équipe Zapy), puisque le
+      // flux normal passe maintenant par un vrai compte (voir
+      // submitSignup() / submitLogin()), qui laisse déjà une session active
+      // au moment où initBackend() est appelé.
       const { data, error } = await sb.auth.signInAnonymously();
       if(error){ console.warn('Connexion anonyme impossible', error); return; }
       session = data.session;
@@ -3461,16 +3558,29 @@ renderMapMarkers();
 document.getElementById('quick-wx-sub').textContent = WEATHER_NOW.temp + '°C · ' + WEATHER_NOW.place;
 document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' sentiers à découvrir';
 
-/* Amorçage : un pseudo déjà enregistré (retour d'un utilisateur) ou une
-   arrivée directe par lien dédié (#admin, #commerce — réservés à l'équipe
-   Zapy / au client, pas à un testeur anonyme) sautent l'identification et
-   démarrent directement ; sinon onboarding-overlay reste affiché jusqu'à
-   ce que submitOnboarding() soit appelé. */
-(function(){
-  let savedPseudo = null;
-  try{ savedPseudo = localStorage.getItem('zapy_pseudo'); }catch(e){}
+/* Amorçage : une arrivée directe par lien dédié (#admin, #commerce —
+   réservés à l'équipe Zapy / au client, pas à un testeur anonyme) saute
+   toujours l'identification. Sinon, on vérifie s'il existe une vraie
+   session Supabase (compte réel, pas anonyme) déjà active dans ce
+   navigateur : si oui on démarre directement, sinon on affiche
+   onboarding-overlay jusqu'à ce que submitOnboarding() soit appelé.
+   Un simple pseudo mémorisé dans localStorage ne suffit plus à lui seul :
+   c'était le critère du mode démo (pseudo seul), remplacé maintenant par
+   un vrai compte email + mot de passe. */
+(async function(){
   const directHash = (location.hash || '').replace('#','');
-  if(savedPseudo || directHash === 'admin' || directHash === 'commerce'){
+  if(directHash === 'admin' || directHash === 'commerce'){
+    initBackend().then(routeFromHash);
+    return;
+  }
+  let hasRealSession = false;
+  if(sb){
+    try{
+      const { data } = await sb.auth.getSession();
+      hasRealSession = !!(data && data.session && data.session.user && !data.session.user.is_anonymous);
+    }catch(e){}
+  }
+  if(hasRealSession){
     initBackend().then(routeFromHash);
   } else {
     document.getElementById('onboarding-overlay').style.display = 'flex';
