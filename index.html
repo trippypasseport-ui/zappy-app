@@ -1514,6 +1514,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </div>
   </div>
+
+  <div class="comments-overlay" id="publish-confirm-overlay" onclick="if(event.target===this) closePublishConfirm()">
+    <div class="comments-sheet" style="max-height:66%;">
+      <div class="comments-head">
+        <span>Vérifie avant de publier</span>
+        <div class="icon-btn" onclick="closePublishConfirm()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;" id="publish-confirm-body"></div>
+      <div style="display:flex; gap:10px; padding:4px 18px 18px;">
+        <button type="button" class="submit-btn" style="flex:1; background:#ECEFF1; color:var(--ink);" onclick="closePublishConfirm()">✏️ Revenir</button>
+        <button type="button" class="submit-btn" style="flex:1;" onclick="confirmAndPublish()">✅ Confirmer</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -2404,11 +2418,44 @@ function removeAudio(){
     </label>`;
 }
 
-async function handlePublish(e){
+/* Étape de vérification avant publication : handlePublish ne publie plus
+   directement, il relit le formulaire tel quel (rien n'est réinitialisé ni
+   envoyé) et affiche un récapitulatif ; actuallyPublish() ne s'exécute que
+   si l'utilisateur confirme, ce qui laisse le temps de repérer une erreur
+   de titre, de lieu ou de catégorie avant que ce soit visible par les autres. */
+function handlePublish(e){
   e.preventDefault();
   const title = document.getElementById('f-title').value.trim();
-  const desc = document.getElementById('f-desc').value.trim();
   if(!title){ toast('Ajoute un titre avant de publier'); return; }
+  showPublishConfirm();
+}
+function showPublishConfirm(){
+  const title = document.getElementById('f-title').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+  const cat = CATEGORIES.find(c=>c.id===selectedCat);
+  const useExact = myGpsLat != null && myGpsLng != null;
+  const locLabel = useExact ? '📍 Position GPS exacte — ' + selectedCommune : '📍 ' + selectedCommune;
+  const photoHtml = pendingPhoto
+    ? `<img src="${pendingPhoto}" style="width:100%; height:130px; object-fit:cover; border-radius:10px; margin-bottom:10px; display:block;">`
+    : '';
+  document.getElementById('publish-confirm-body').innerHTML =
+    photoHtml
+    + `<div style="font-size:11.5px; font-weight:800; color:${cat.color}; text-transform:uppercase; letter-spacing:0.3px; margin-bottom:4px;">${isMerchantPost ? 'Promotion' : cat.label}${selectedCat==='trafic' ? ' · ' + selectedUrgency : ''}</div>`
+    + `<div style="font-size:15.5px; font-weight:800; color:var(--ink); margin-bottom:6px;">${title}</div>`
+    + (desc ? `<div style="font-size:13px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${desc}</div>` : '')
+    + `<div style="font-size:12.5px; color:var(--muted);">${locLabel}</div>`;
+  document.getElementById('publish-confirm-overlay').classList.add('show');
+}
+function closePublishConfirm(){
+  document.getElementById('publish-confirm-overlay').classList.remove('show');
+}
+async function confirmAndPublish(){
+  closePublishConfirm();
+  await actuallyPublish();
+}
+async function actuallyPublish(){
+  const title = document.getElementById('f-title').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
   const cat = CATEGORIES.find(c=>c.id===selectedCat);
   const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
   // Adresse exacte (GPS) dès qu'une position a été détectée automatiquement ;
@@ -2480,7 +2527,7 @@ async function handlePublish(e){
   activeCat = 'toutes';
   renderCatRow();
   renderPosts();
-  e.target.reset();
+  document.getElementById('publish-form').reset();
   resetPhotoField();
   removeAudio();
   selectedCat = 'trafic'; renderCatGrid();
