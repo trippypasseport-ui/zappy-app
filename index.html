@@ -133,7 +133,7 @@
   .cat-tile.selected{border-color:transparent; box-shadow:0 0 0 2px var(--orange) inset;}
   .cat-tile .dot{width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:800; font-size:13px;}
   .cat-tile span{font-size:10px; font-weight:700; text-align:center; color:var(--ink);}
-  input[type=text], textarea{
+  input[type=text], input[type=date], textarea{
     width:100%; padding:12px 13px; border-radius:12px; border:1px solid var(--line);
     font-family:inherit; font-size:13.5px; color:var(--ink); background:var(--surface); outline:none;
   }
@@ -1084,6 +1084,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
             <input type="file" id="f-audio" accept="audio/*" style="display:none" onchange="handleAudio(event)">
           </div>
         </div>
+        <div id="enddate-block" style="display:none;">
+          <label class="field-label" for="f-enddate">Date de fin</label>
+          <input type="date" id="f-enddate">
+          <div style="font-size:11.5px; color:#78909C; margin-top:6px;">La publication disparaît automatiquement le lendemain de cette date. Laisse vide pour une publication sans date de fin.</div>
+        </div>
         <div>
           <div class="field-label">Localisation</div>
           <div class="loc-box" id="loc-box">
@@ -1550,9 +1555,14 @@ async function initBackend(){
 
 async function loadRemotePosts(){
   if(!sb) return;
+  // Une publication avec une date de fin dépassée (expires_at) ne doit plus
+  // jamais être chargée : c'est ce qui la fait "disparaître" automatiquement
+  // de partout (fil, carte) sans avoir besoin d'une tâche serveur dédiée.
+  const nowIso = new Date().toISOString();
   const { data, error } = await sb
     .from('publications')
     .select('*, confirmations(user_id), likes(user_id), comments(id, author_name, text, created_at)')
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order('created_at', {ascending:false});
   if(error){ console.warn('Erreur chargement publications', error); return; }
   const catMeta = {};
@@ -1937,6 +1947,7 @@ function selectFormCat(id){
   renderCatGrid();
   document.getElementById('urgency-block').style.display = (id==='trafic') ? 'block' : 'none';
   document.getElementById('audio-block').style.display = (id==='artiste') ? 'block' : 'none';
+  document.getElementById('enddate-block').style.display = (id==='commerces' || id==='evenements') ? 'block' : 'none';
   const lbl = CAT_LABELS[id] || CAT_LABELS.trafic;
   document.getElementById('publish-title').textContent = lbl.title;
   document.getElementById('publish-submit-btn').textContent = lbl.verb;
@@ -2134,9 +2145,15 @@ async function handlePublish(e){
         location: geoPoint,
         is_sponsored: isMerchantPost,
       };
-      if(isMerchantPost){
-        // Une promotion commerçant dure 7 jours (au lieu des 24h par défaut
-        // des autres publications), puis disparaît automatiquement.
+      // Commerces et Événements peuvent recevoir une date de fin : la
+      // publication disparaît automatiquement le lendemain de cette date
+      // (filtrée dans loadRemotePosts). Sans date choisie, une promotion
+      // commerçant garde son filet de sécurité par défaut de 7 jours ;
+      // les autres publications restent sans date de fin.
+      const enddateVal = document.getElementById('f-enddate').value;
+      if((selectedCat==='commerces' || selectedCat==='evenements') && enddateVal){
+        insertPayload.expires_at = new Date(enddateVal + 'T23:59:59').toISOString();
+      } else if(isMerchantPost){
         insertPayload.expires_at = new Date(Date.now() + 7*24*60*60*1000).toISOString();
       }
       const { error } = await sb.from('publications').insert(insertPayload);
