@@ -114,6 +114,11 @@
   .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative; height:220px;}
   .map-wrap img{width:100%; display:block;}
   .map-wrap .leaflet-container{background:#dce9f0;}
+  .commune-label{
+    font-size:9.5px; font-weight:700; color:#263238; white-space:nowrap; pointer-events:none;
+    background:rgba(255,255,255,0.78); padding:1px 5px; border-radius:6px;
+    transform:translate(-50%, 6px); text-shadow:none;
+  }
   .locate-btn{position:absolute; right:12px; top:12px; z-index:1100; width:38px; height:38px; border-radius:50%; background:var(--surface); box-shadow:0 4px 10px rgba(13,71,161,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .sugg-row{display:flex; gap:10px; padding:0 16px; overflow-x:auto; flex-wrap:nowrap;}
   .sugg-card{flex-shrink:0; width:130px; border-radius:14px; overflow:hidden; background:var(--surface); border:1px solid var(--line); position:relative;}
@@ -1179,6 +1184,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
         Mettez votre commerce en avant auprès de toute la Martinique. Vos publications sponsorisées apparaissent en priorité dans le fil et sur la carte.
       </div>
       <div class="pricing-list" id="pricing-list"></div>
+      <div style="padding:4px 18px 0;">
+        <button type="button" class="submit-btn" onclick="startMerchantPublish()">+ Publier une promotion</button>
+      </div>
       <div class="section-tag">Aperçu dans le fil</div>
       <div class="post-list" style="padding-bottom:20px;">
         <div class="post-card">
@@ -1558,6 +1566,7 @@ async function loadRemotePosts(){
       title: row.title, text: row.description || '—', photo: row.photo_url, audio:null,
       likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
+      sponsored: !!row.is_sponsored,
       comments: commentRows.map(c => ({author: c.author_name || 'Testeur Zapy', text: c.text}))
     };
   });
@@ -1650,6 +1659,7 @@ function renderPosts(){
           </div>
         </div>
         ${p.cat==='trafic' && p.cleared ? `<div class="cleared-banner">✅ Circulation redevenue normale — confirmé par des utilisateurs</div>` : ''}
+        ${p.sponsored ? `<span class="sponsor-badge">★ Sponsorisé</span>` : ''}
         <div class="post-title">${p.title}</div>
         <div class="post-text">${p.text}</div>
         ${p.audio? `<audio controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;"></audio>` : ''}
@@ -1789,6 +1799,7 @@ function ensureMapThumb(){
     minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
   }).setView(MARTINIQUE_CENTER, 10);
   L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapThumb);
+  addCommuneLabels(mapThumb);
   renderMapMarkers();
   tryAutoLocate();
 }
@@ -1799,8 +1810,20 @@ function ensureMapFull(){
     minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
   }).setView(MARTINIQUE_CENTER, 10);
   L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapFull);
+  addCommuneLabels(mapFull);
   renderMapMarkers();
   tryAutoLocate();
+}
+/* Les 34 communes n'apparaissent pas toutes sur le fond de carte OpenStreetMap
+   (ça dépend du niveau de zoom et de la densité du rendu) : on ajoute donc
+   nous-mêmes une étiquette pour chacune, toujours visible. */
+function addCommuneLabels(map){
+  Object.values(COMMUNE_COORDS).forEach(c => {
+    L.marker([c.lat, c.lng], {
+      icon: L.divIcon({className:'commune-label', html: c.label, iconSize:null}),
+      interactive:false, keyboard:false
+    }).addTo(map);
+  });
 }
 function renderMapMarkers(){
   renderedMapPins = [...MAP_PINS, ...buildRemoteMapPins()];
@@ -1914,7 +1937,9 @@ function renderCatGrid(){
       <span>${c.label}</span>
     </div>`).join('');
 }
+let isMerchantPost = false;
 function selectFormCat(id){
+  isMerchantPost = false; // réinitialisé par défaut ; remis à true juste après par startMerchantPublish() si besoin
   selectedCat = id;
   renderCatGrid();
   document.getElementById('urgency-block').style.display = (id==='trafic') ? 'block' : 'none';
@@ -2104,7 +2129,7 @@ async function handlePublish(e){
   try{
     if(sb && currentUserId){
       const geoPoint = coord ? `POINT(${coord.lng} ${coord.lat})` : `POINT(${MARTINIQUE_CENTER[1]} ${MARTINIQUE_CENTER[0]})`;
-      const { error } = await sb.from('publications').insert({
+      const insertPayload = {
         author_id: currentUserId,
         author_name: myPseudo,
         category_id: selectedCat,
@@ -2114,7 +2139,14 @@ async function handlePublish(e){
         commune: selectedCommune,
         urgency: selectedCat==='trafic' ? selectedUrgency : null,
         location: geoPoint,
-      });
+        is_sponsored: isMerchantPost,
+      };
+      if(isMerchantPost){
+        // Une promotion commerçant dure 7 jours (au lieu des 24h par défaut
+        // des autres publications), puis disparaît automatiquement.
+        insertPayload.expires_at = new Date(Date.now() + 7*24*60*60*1000).toISOString();
+      }
+      const { error } = await sb.from('publications').insert(insertPayload);
       if(error){ console.warn('Publication partagée échouée, repli local', error); }
       else { publishedRemotely = true; await loadRemotePosts(); }
     }
@@ -2127,7 +2159,8 @@ async function handlePublish(e){
       time:'À l’instant', place:selectedCommune,
       title: title, text: desc || '—',
       photo: pendingPhoto, audio: pendingAudio, likes:0, commentCount:0, liked:false, cat: selectedCat, comments:[],
-      urgency: selectedCat==='trafic' ? selectedUrgency : null, cleared:false, clearConfirms:0
+      urgency: selectedCat==='trafic' ? selectedUrgency : null, cleared:false, clearConfirms:0,
+      sponsored: isMerchantPost
     });
   }
   if(!publishedRemotely){
@@ -2153,7 +2186,8 @@ async function handlePublish(e){
   selectedUrgency = 'Modérée'; renderUrgency();
   document.getElementById('urgency-block').style.display='none';
   document.getElementById('audio-block').style.display='none';
-  toast('Signalement publié !');
+  toast(isMerchantPost ? 'Promotion publiée — visible 7 jours !' : 'Signalement publié !');
+  isMerchantPost = false;
   showScreen('accueil');
 }
 
@@ -2541,6 +2575,32 @@ function loadPlanTierPrices(){
     PLAN_TIERS.forEach(t => { if(saved[t.id] != null) t.price = saved[t.id]; });
   }catch(e){ /* repli silencieux */ }
 }
+
+/* ---- Abonnement commerçant de CET utilisateur (prototype : simulation locale,
+   pas de vrai paiement) ---- */
+let myPlan = null;
+function loadMyPlan(){
+  try{ myPlan = localStorage.getItem('zapy_my_plan') || null; }catch(e){ myPlan = null; }
+}
+function subscribeToPlan(id){
+  const t = PLAN_TIERS.find(x=>x.id===id);
+  if(!t) return;
+  myPlan = id;
+  try{ localStorage.setItem('zapy_my_plan', id); }catch(e){ /* repli silencieux */ }
+  renderPricingList();
+  toast('Abonnement « ' + t.name + ' » activé — tu peux publier une promotion');
+}
+function startMerchantPublish(){
+  if(!myPlan){
+    toast('Choisis d’abord une formule ci-dessous pour publier une promotion');
+    const list = document.getElementById('pricing-list');
+    if(list) list.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  showScreen('publier');
+  selectFormCat('commerces');
+  isMerchantPost = true;
+}
 function editPlanTierPrice(id){
   const t = PLAN_TIERS.find(x=>x.id===id);
   if(!t) return;
@@ -2561,12 +2621,17 @@ function editPlanTierPrice(id){
 function renderPricingList(){
   const el = document.getElementById('pricing-list');
   if(!el) return;
-  el.innerHTML = PLAN_TIERS.map(t => `
+  el.innerHTML = PLAN_TIERS.map(t => {
+    const active = myPlan === t.id;
+    return `
     <div class="price-card ${t.featured?'featured':''}">
       <div class="price-top"><span class="price-name">${t.name}</span><span class="price-amount">${t.price}€<small>/mois</small></span></div>
       <ul class="price-feats">${t.feats.map(f=>`<li>${f}</li>`).join('')}</ul>
-      <button type="button" class="price-btn" onclick="toast('Paiement — à venir')">Choisir</button>
-    </div>`).join('');
+      ${active
+        ? `<button type="button" class="price-btn" disabled style="opacity:0.7; cursor:default;">✓ Formule active</button>`
+        : `<button type="button" class="price-btn" onclick="subscribeToPlan('${t.id}')">Choisir</button>`}
+    </div>`;
+  }).join('');
 }
 function generateInvoice(id){
   const m = merchants.find(x=>x.id===id);
@@ -2688,6 +2753,7 @@ function toast(msg){
 
 populateCommuneLists();
 loadPlanTierPrices();
+loadMyPlan();
 renderPricingList();
 renderCatRow();
 renderPosts();
