@@ -1003,8 +1003,40 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
       <input type="email" id="onboarding-email" placeholder="Email" autocomplete="email" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:10px;">
       <input type="password" id="onboarding-password" placeholder="Mot de passe" autocomplete="new-password" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:6px;" onkeydown="if(event.key==='Enter') submitOnboarding()">
+      <div id="onb-forgot-link" style="display:none; text-align:right; margin-bottom:8px;">
+        <a href="#" onclick="openForgotPassword(); return false;" style="font-size:11.5px; color:var(--muted); text-decoration:underline;">Mot de passe oublié ?</a>
+      </div>
       <div id="onb-error" style="font-size:11.5px; color:#D32F2F; text-align:left; min-height:14px; margin-bottom:8px;"></div>
       <button type="button" class="submit-btn" id="onb-submit-btn" style="width:100%;" onclick="submitOnboarding()">Créer mon compte</button>
+    </div>
+  </div>
+
+  <!-- MOT DE PASSE OUBLIÉ : demande l'email, envoie un lien de
+       réinitialisation via Supabase Auth (resetPasswordForEmail). -->
+  <div id="forgot-password-overlay" style="display:none; position:absolute; inset:0; z-index:500; background:var(--surface); flex-direction:column; align-items:center; justify-content:center; padding:32px 26px; text-align:center; overflow-y:auto;">
+    <div class="logo-row logo" style="font-size:32px; margin-bottom:6px;"><span class="zap">Zap</span><span class="y">y</span></div>
+    <div style="font-size:14px; font-weight:800; color:var(--ink); margin-bottom:6px;">Mot de passe oublié</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:18px; max-width:260px;">Indique ton email, on t'envoie un lien pour choisir un nouveau mot de passe.</div>
+    <div style="width:100%; max-width:280px;">
+      <input type="email" id="forgot-email" placeholder="Email" autocomplete="email" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:10px;" onkeydown="if(event.key==='Enter') submitForgotPassword()">
+      <div id="forgot-error" style="font-size:11.5px; color:#D32F2F; text-align:left; min-height:14px; margin-bottom:8px;"></div>
+      <button type="button" class="submit-btn" id="forgot-submit-btn" style="width:100%; margin-bottom:10px;" onclick="submitForgotPassword()">Envoyer le lien</button>
+      <a href="#" onclick="closeForgotPassword(); return false;" style="font-size:12px; color:var(--muted); text-decoration:underline;">‹ Retour à la connexion</a>
+    </div>
+  </div>
+
+  <!-- NOUVEAU MOT DE PASSE : s'affiche automatiquement quand l'utilisateur
+       arrive via le lien reçu par email (événement Supabase
+       PASSWORD_RECOVERY, voir l'écoute mise en place juste après la
+       création de `sb`). -->
+  <div id="reset-password-overlay" style="display:none; position:absolute; inset:0; z-index:500; background:var(--surface); flex-direction:column; align-items:center; justify-content:center; padding:32px 26px; text-align:center; overflow-y:auto;">
+    <div class="logo-row logo" style="font-size:32px; margin-bottom:6px;"><span class="zap">Zap</span><span class="y">y</span></div>
+    <div style="font-size:14px; font-weight:800; color:var(--ink); margin-bottom:6px;">Nouveau mot de passe</div>
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:18px; max-width:260px;">Choisis un nouveau mot de passe pour ton compte.</div>
+    <div style="width:100%; max-width:280px;">
+      <input type="password" id="reset-password" placeholder="Nouveau mot de passe" autocomplete="new-password" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:10px;" onkeydown="if(event.key==='Enter') submitNewPassword()">
+      <div id="reset-error" style="font-size:11.5px; color:#D32F2F; text-align:left; min-height:14px; margin-bottom:8px;"></div>
+      <button type="button" class="submit-btn" id="reset-submit-btn" style="width:100%;" onclick="submitNewPassword()">Valider</button>
     </div>
   </div>
 
@@ -1665,6 +1697,20 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // d'identification (inscription/connexion) a besoin d'appeler Supabase
 // Auth AVANT que le reste de l'app ne démarre.
 let sb = (typeof supabase !== 'undefined') ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+// Lien de réinitialisation de mot de passe cliqué depuis l'email : Supabase
+// ouvre alors une session de récupération temporaire et déclenche cet
+// événement, quel que soit l'écran affiché à ce moment-là — on bascule
+// directement sur reset-password-overlay pour que l'utilisateur choisisse
+// son nouveau mot de passe (voir submitNewPassword()).
+if(sb){
+  sb.auth.onAuthStateChange((event) => {
+    if(event === 'PASSWORD_RECOVERY'){
+      document.getElementById('onboarding-overlay').style.display = 'none';
+      document.getElementById('forgot-password-overlay').style.display = 'none';
+      document.getElementById('reset-password-overlay').style.display = 'flex';
+    }
+  });
+}
 let currentUserId = null;
 let myPseudo = null;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
@@ -1725,6 +1771,7 @@ function setOnboardingMode(mode){
   document.getElementById('onb-pseudo-field').style.display = isSignup ? 'block' : 'none';
   document.getElementById('onb-submit-btn').textContent = isSignup ? 'Créer mon compte' : 'Se connecter';
   document.getElementById('onboarding-password').setAttribute('autocomplete', isSignup ? 'new-password' : 'current-password');
+  document.getElementById('onb-forgot-link').style.display = isSignup ? 'none' : 'block';
   document.getElementById('onb-error').textContent = '';
 }
 function translateAuthError(error){
@@ -1789,6 +1836,66 @@ async function submitOnboarding(){
     btn.disabled = false;
   }
 }
+/* Mot de passe oublié : demande l'email puis déclenche l'envoi du lien de
+   réinitialisation côté Supabase. Le message affiché est volontairement
+   identique qu'un compte existe ou non avec cet email, pour ne pas révéler
+   les adresses enregistrées. */
+function openForgotPassword(){
+  document.getElementById('forgot-email').value = document.getElementById('onboarding-email').value.trim();
+  document.getElementById('forgot-error').textContent = '';
+  document.getElementById('onboarding-overlay').style.display = 'none';
+  document.getElementById('forgot-password-overlay').style.display = 'flex';
+}
+function closeForgotPassword(){
+  document.getElementById('forgot-password-overlay').style.display = 'none';
+  document.getElementById('onboarding-overlay').style.display = 'flex';
+}
+async function submitForgotPassword(){
+  const errEl = document.getElementById('forgot-error');
+  errEl.textContent = '';
+  const email = document.getElementById('forgot-email').value.trim();
+  if(!sb){ errEl.textContent = 'Connexion indisponible, réessaie plus tard.'; return; }
+  if(!email){ errEl.textContent = 'Indique ton email.'; return; }
+  const btn = document.getElementById('forgot-submit-btn');
+  btn.disabled = true;
+  try{
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+    if(error){ console.warn('Erreur envoi email réinitialisation', error); }
+    toast('Si un compte existe avec cet email, un lien de réinitialisation vient d\'être envoyé.');
+    closeForgotPassword();
+    setOnboardingMode('login');
+  } catch(e){
+    console.warn('Erreur réseau', e);
+    errEl.textContent = 'Erreur réseau, réessaie.';
+  } finally {
+    btn.disabled = false;
+  }
+}
+/* Nouveau mot de passe : s'affiche quand PASSWORD_RECOVERY est détecté
+   (voir l'écoute juste après la création de `sb`). La session de
+   récupération ouverte par le clic sur le lien email est déjà valide, donc
+   après la mise à jour on peut directement démarrer l'app. */
+async function submitNewPassword(){
+  const errEl = document.getElementById('reset-error');
+  errEl.textContent = '';
+  const newPwd = document.getElementById('reset-password').value;
+  if(!sb){ errEl.textContent = 'Connexion indisponible, réessaie plus tard.'; return; }
+  if(!newPwd || newPwd.length < 6){ errEl.textContent = 'Le mot de passe doit faire au moins 6 caractères.'; return; }
+  const btn = document.getElementById('reset-submit-btn');
+  btn.disabled = true;
+  try{
+    const { error } = await sb.auth.updateUser({ password: newPwd });
+    if(error){ errEl.textContent = translateAuthError(error); return; }
+    document.getElementById('reset-password-overlay').style.display = 'none';
+    toast('Mot de passe mis à jour');
+    initBackend().then(routeFromHash);
+  } catch(e){
+    console.warn('Erreur réseau', e);
+    errEl.textContent = 'Erreur réseau, réessaie.';
+  } finally {
+    btn.disabled = false;
+  }
+}
 /* Déconnexion : on efface le pseudo local et on recharge la page plutôt que
    de ré-initialiser tout l'état en mémoire à la main (remotePosts, cartes,
    abonnements temps réel…) — la séquence d'amorçage du bas de page
@@ -1832,7 +1939,15 @@ async function changeAdminPassword(){
   }
 }
 
+let backendInitialized = false;
 async function initBackend(){
+  // Idempotent : peut maintenant être appelé deux fois lors du flux "mot de
+  // passe oublié" (une fois par la séquence d'amorçage si une session de
+  // récupération est déjà active au chargement, une fois par
+  // submitNewPassword() une fois le mot de passe changé) — sans ce garde,
+  // chaque appel ajoute de nouveaux abonnements temps réel en double.
+  if(backendInitialized) return;
+  backendInitialized = true;
   try{
     if(!sb){ console.warn('Supabase JS non chargé'); return; }
     myPseudo = getPseudo();
