@@ -114,7 +114,7 @@
   .map-wrap{margin:0 16px 14px; border-radius:16px; overflow:hidden; position:relative; height:220px;}
   .map-wrap img{width:100%; display:block;}
   .map-wrap .leaflet-container{background:#dce9f0;}
-  .locate-btn{position:absolute; right:12px; bottom:12px; width:38px; height:38px; border-radius:50%; background:var(--surface); box-shadow:0 4px 10px rgba(13,71,161,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
+  .locate-btn{position:absolute; right:12px; top:12px; z-index:1100; width:38px; height:38px; border-radius:50%; background:var(--surface); box-shadow:0 4px 10px rgba(13,71,161,0.2); display:flex; align-items:center; justify-content:center; cursor:pointer;}
   .sugg-row{display:flex; gap:10px; padding:0 16px; overflow-x:auto; flex-wrap:nowrap;}
   .sugg-card{flex-shrink:0; width:130px; border-radius:14px; overflow:hidden; background:var(--surface); border:1px solid var(--line); position:relative;}
   .sugg-card img{width:100%; height:88px; object-fit:cover; display:block;}
@@ -1034,9 +1034,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
         <div class="icon-btn" onclick="toast('Filtres avancés — à venir')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/><circle cx="6" cy="12" r="1.6" fill="#FF8A00" stroke="none"/><circle cx="10" cy="18" r="1.6" fill="#FF8A00" stroke="none"/></svg></div>
       </div>
-      <div class="map-wrap" onclick="openMapView()">
+      <div class="map-wrap">
         <div id="leaflet-thumb" style="position:absolute; inset:0;"></div>
-        <div class="locate-btn" onclick="event.stopPropagation(); locateMe()">
+        <div class="locate-btn" onclick="locateMe()">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
         </div>
       </div>
@@ -1782,9 +1782,10 @@ function tryAutoLocate(){
 
 function ensureMapThumb(){
   if(mapThumb || typeof L === 'undefined') return;
+  // Carte directement interactive sur l'écran Carte : zoom, déplacement et
+  // clic sur les pins, sans passer par une vue plein écran séparée.
   mapThumb = L.map('leaflet-thumb', {
-    zoomControl:false, attributionControl:false, dragging:false, scrollWheelZoom:false,
-    doubleClickZoom:false, boxZoom:false, keyboard:false, tap:false,
+    zoomControl:true, attributionControl:true,
     minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
   }).setView(MARTINIQUE_CENTER, 10);
   L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapThumb);
@@ -1809,8 +1810,8 @@ function renderMapMarkers(){
     markersArr.length = 0;
     renderedMapPins.forEach((p, i) => {
       if(p.lat == null || p.lng == null) return;
-      const marker = L.marker([p.lat, p.lng], {icon: pinDivIcon(p), interactive: map === mapFull}).addTo(map);
-      if(map === mapFull){ marker.on('click', () => pinInfo(null, i)); }
+      const marker = L.marker([p.lat, p.lng], {icon: pinDivIcon(p), interactive: true}).addTo(map);
+      marker.on('click', () => pinInfo(null, i));
       markersArr.push(marker);
     });
   });
@@ -2098,21 +2099,27 @@ async function handlePublish(e){
   const cat = CATEGORIES.find(c=>c.id===selectedCat);
   const coord = COMMUNE_COORDS[normalizeCommune(selectedCommune)];
   let publishedRemotely = false;
-  if(sb && currentUserId){
-    const geoPoint = coord ? `POINT(${coord.lng} ${coord.lat})` : `POINT(${MARTINIQUE_CENTER[1]} ${MARTINIQUE_CENTER[0]})`;
-    const { error } = await sb.from('publications').insert({
-      author_id: currentUserId,
-      author_name: myPseudo,
-      category_id: selectedCat,
-      title: title,
-      description: desc || null,
-      photo_url: pendingPhoto || null,
-      commune: selectedCommune,
-      urgency: selectedCat==='trafic' ? selectedUrgency : null,
-      location: geoPoint,
-    });
-    if(error){ console.warn('Publication partagée échouée, repli local', error); }
-    else { publishedRemotely = true; await loadRemotePosts(); }
+  // Tout le travail réseau est protégé : une erreur ici (réseau, Supabase,
+  // etc.) ne doit jamais empêcher le retour à l'accueil en bas de fonction.
+  try{
+    if(sb && currentUserId){
+      const geoPoint = coord ? `POINT(${coord.lng} ${coord.lat})` : `POINT(${MARTINIQUE_CENTER[1]} ${MARTINIQUE_CENTER[0]})`;
+      const { error } = await sb.from('publications').insert({
+        author_id: currentUserId,
+        author_name: myPseudo,
+        category_id: selectedCat,
+        title: title,
+        description: desc || null,
+        photo_url: pendingPhoto || null,
+        commune: selectedCommune,
+        urgency: selectedCat==='trafic' ? selectedUrgency : null,
+        location: geoPoint,
+      });
+      if(error){ console.warn('Publication partagée échouée, repli local', error); }
+      else { publishedRemotely = true; await loadRemotePosts(); }
+    }
+  } catch(err){
+    console.warn('Erreur réseau lors de la publication, repli local', err);
   }
   if(!publishedRemotely){
     posts.unshift({
@@ -2135,7 +2142,7 @@ async function handlePublish(e){
       });
     }
   }
-  renderMapMarkers();
+  try{ renderMapMarkers(); } catch(err){ console.warn('Erreur affichage des pins', err); }
   activeCat = 'toutes';
   renderCatRow();
   renderPosts();
