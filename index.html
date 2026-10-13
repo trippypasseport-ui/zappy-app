@@ -1498,6 +1498,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </div>
   </div>
+
+  <div class="comments-overlay" id="edit-overlay" onclick="if(event.target===this) closeEditModal()">
+    <div class="comments-sheet" style="max-height:60%;">
+      <div class="comments-head">
+        <span>Modifier la publication</span>
+        <div class="icon-btn" onclick="closeEditModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        <div class="field-label">Titre</div>
+        <input type="text" id="edit-title" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 12px;">
+        <div class="field-label">Description</div>
+        <textarea id="edit-desc" rows="3" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; resize:vertical; box-sizing:border-box; margin-top:6px;"></textarea>
+        <button type="button" class="submit-btn" style="margin-top:14px; width:100%;" onclick="submitEditPublication()">Enregistrer les modifications</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -2021,17 +2037,26 @@ function renderComments(){
   }
   const navHtml = navLinksHtml(navLat, navLng);
   // Auteur cliquable (ouvre son profil) + bouton signaler, réservé aux
-  // membres actifs et jamais affiché sur sa propre publication.
-  const isOwnPost = p.authorId && p.authorId === currentUserId;
+  // membres actifs et jamais affiché sur sa propre publication. Sur sa
+  // propre publication, à la place : modifier / supprimer. p.name==='Toi'
+  // couvre aussi les publications restées locales (repli hors-ligne, pas
+  // d'author_id) — même convention que mesPublications() plus bas.
+  const isOwnPost = (p.authorId && p.authorId === currentUserId) || p.name === 'Toi';
   const canReportPub = p.remote && isActiveMember(currentUserId) && !isOwnPost;
   const authorHtml = p.authorId
     ? `<span onclick="openUserProfileFromPost('${p.id}')" style="cursor:pointer; font-weight:800; color:var(--ink);">${p.name}</span>`
     : `<span style="font-weight:800; color:var(--ink);">${p.name}</span>`;
+  const ownActionsHtml = isOwnPost
+    ? `<span style="display:flex; gap:14px;">
+        <span onclick="openEditModal('${p.id}')" style="color:#1565C0; font-weight:700; font-size:11.5px; cursor:pointer;">✏️ Modifier</span>
+        <span onclick="deletePublication('${p.id}')" style="color:#D32F2F; font-weight:700; font-size:11.5px; cursor:pointer;">🗑️ Supprimer</span>
+      </span>`
+    : '';
   const reportBtnHtml = canReportPub
     ? `<span onclick="openReportModal('publication','${p.id}')" style="color:#D32F2F; font-weight:700; font-size:11.5px; cursor:pointer;">🚩 Signaler</span>`
     : '';
   document.getElementById('comments-list').innerHTML =
-    `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:13px;">${authorHtml}${reportBtnHtml}</div>`
+    `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:13px;">${authorHtml}${ownActionsHtml || reportBtnHtml}</div>`
     + `<div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">📍 ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? ` · ⏱ ${DURATION_HINTS[p.urgency]||''}` : ''}</div>`
     + galleryHtml
     + `<div style="font-size:13.5px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${p.text}</div>`
@@ -2903,6 +2928,62 @@ async function submitReport(){
   if(error){ console.warn('Signalement échoué', error); toast('Le signalement n’a pas pu être envoyé'); return; }
   closeReportModal();
   toast('Signalement envoyé — l’équipe va l’examiner');
+}
+
+/* ---- Modifier / supprimer sa propre publication ---- */
+let editingPubId = null;
+function openEditModal(pubId){
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(pubId));
+  if(!p) return;
+  editingPubId = pubId;
+  document.getElementById('edit-title').value = p.title || '';
+  // p.text vaut '—' quand la description est vide (voir loadRemotePosts) :
+  // on ne veut pas ré-injecter ce tiret dans le champ de modification.
+  document.getElementById('edit-desc').value = (p.text && p.text !== '—') ? p.text : '';
+  document.getElementById('edit-overlay').classList.add('show');
+}
+function closeEditModal(){
+  document.getElementById('edit-overlay').classList.remove('show');
+  editingPubId = null;
+}
+async function submitEditPublication(){
+  const title = document.getElementById('edit-title').value.trim();
+  const desc = document.getElementById('edit-desc').value.trim();
+  if(!title){ toast('Le titre ne peut pas être vide'); return; }
+  const remote = remotePosts.find(x=>String(x.id)===String(editingPubId));
+  if(remote && sb && currentUserId){
+    const { error } = await sb.from('publications')
+      .update({title, description: desc || null})
+      .eq('id', editingPubId).eq('author_id', currentUserId);
+    if(error){ console.warn('Modification échouée', error); toast('Erreur, réessaie'); return; }
+    await loadRemotePosts();
+  } else {
+    const local = posts.find(x=>String(x.id)===String(editingPubId));
+    if(local){ local.title = title; local.text = desc || '—'; renderPosts(); }
+  }
+  closeEditModal();
+  if(openPostId!=null) renderComments();
+  toast('Publication modifiée');
+}
+function deletePublication(pubId){
+  // Confirmation native : action irréversible (suppression réelle en base,
+  // avec suppression en cascade des likes/commentaires/confirmations liés).
+  if(!confirm('Supprimer définitivement cette publication ? Cette action est irréversible.')) return;
+  doDeletePublication(pubId);
+}
+async function doDeletePublication(pubId){
+  const remote = remotePosts.find(x=>String(x.id)===String(pubId));
+  if(remote && sb && currentUserId){
+    const { error } = await sb.from('publications').delete().eq('id', pubId).eq('author_id', currentUserId);
+    if(error){ console.warn('Suppression échouée', error); toast('Erreur, réessaie'); return; }
+    await loadRemotePosts();
+  } else {
+    posts = posts.filter(p=>String(p.id)!==String(pubId));
+    renderPosts();
+  }
+  try{ renderMapMarkers(); }catch(err){ console.warn('Erreur affichage des pins', err); }
+  closeComments();
+  toast('Publication supprimée');
 }
 
 /* ---- Administration ---- */
