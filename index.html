@@ -1794,10 +1794,15 @@ function userLocDivIcon(){
 /* Martinique uniquement : empêche de voir les îles voisines en dézoomant */
 const MARTINIQUE_BOUNDS = [[14.30, -61.35], [14.98, -60.72]];
 const MARTINIQUE_MIN_ZOOM = 10;
-/* Fond de carte OpenStreetMap standard — fonctionne sans clé API
-   (CartoDB nécessite désormais une inscription/clé, donc écarté) */
-const MAP_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-const MAP_TILE_ATTR = '© OpenStreetMap contributors';
+/* Fond de carte "sans texte" (Esri World Light Gray Base) — fonctionne sans
+   clé API, contrairement à CartoDB. Les tuiles OpenStreetMap standard
+   intègrent elles-mêmes les noms de certaines communes dans l'image, ce qui
+   créait un doublon avec nos propres étiquettes (ajoutées pour que les 34
+   communes soient toutes visibles, pas seulement les plus grandes) : avec un
+   fond sans texte, seules nos étiquettes apparaissent, plus de doublon. */
+const MAP_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}';
+const MAP_TILE_ATTR = 'Esri, HERE, Garmin, © OpenStreetMap contributors';
+const MAP_TILE_MAX_NATIVE_ZOOM = 16;
 
 function tryAutoLocate(){
   if(!navigator.geolocation) return;
@@ -1814,7 +1819,7 @@ function ensureMapThumb(){
     zoomControl:true, attributionControl:true,
     minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
   }).setView(MARTINIQUE_CENTER, 10);
-  L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapThumb);
+  L.tileLayer(MAP_TILE_URL, {maxZoom:18, maxNativeZoom:MAP_TILE_MAX_NATIVE_ZOOM, attribution:MAP_TILE_ATTR}).addTo(mapThumb);
   addCommuneLabels(mapThumb);
   renderMapMarkers();
   tryAutoLocate();
@@ -1825,7 +1830,7 @@ function ensureMapFull(){
     zoomControl:true, attributionControl:true,
     minZoom: MARTINIQUE_MIN_ZOOM, maxBounds: MARTINIQUE_BOUNDS, maxBoundsViscosity: 1.0
   }).setView(MARTINIQUE_CENTER, 10);
-  L.tileLayer(MAP_TILE_URL, {maxZoom:18, attribution:MAP_TILE_ATTR}).addTo(mapFull);
+  L.tileLayer(MAP_TILE_URL, {maxZoom:18, maxNativeZoom:MAP_TILE_MAX_NATIVE_ZOOM, attribution:MAP_TILE_ATTR}).addTo(mapFull);
   addCommuneLabels(mapFull);
   renderMapMarkers();
   tryAutoLocate();
