@@ -1108,18 +1108,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div>
           <div class="field-label">Localisation</div>
           <div class="loc-box" id="loc-box">
-            <div style="display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700;">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-              <span id="loc-status">Localisation en cours…</span>
-            </div>
-            <span style="font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;" onclick="toggleManualLocation()">Modifier</span>
-          </div>
-          <div class="loc-box" id="loc-manual" style="display:none;">
-            <select id="f-commune" style="border:none; background:transparent; padding:0; flex-grow:1; font-size:13px; color:var(--ink); appearance:none; -webkit-appearance:none;" onchange="confirmManualLocation()"></select>
+            <select id="f-commune" style="border:none; background:transparent; padding:0; flex-grow:1; font-size:13px; color:var(--ink); appearance:none; -webkit-appearance:none;" onchange="selectCommuneManually()"></select>
             <datalist id="commune-list"></datalist>
           </div>
-          <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné</div>
-          <span id="loc-retry" style="display:none; font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer; margin-top:6px; align-items:center; gap:5px;" onclick="simulateLocate()">🔄 Réessayer la position GPS précise</span>
+          <div style="font-size:11.5px; color:#78909C; margin-top:6px;" id="loc-detail">Choisis ta commune, ou utilise ta position GPS précise ci-dessous</div>
+          <span id="loc-gps-btn" style="display:inline-flex; align-items:center; gap:5px; font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer; margin-top:8px;" onclick="useExactGpsPosition()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF8A00" stroke-width="2.4"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            Utiliser ma position GPS exacte
+          </span>
         </div>
         <div id="urgency-block" style="display:none;">
           <div class="field-label">Niveau d'urgence</div>
@@ -2191,73 +2187,49 @@ function populateCommuneLists(){
   if(wxSelect) wxSelect.innerHTML = opts;
 }
 let selectedCommune = 'Fort-de-France';
-let locTimer;
 /* Position GPS précise du moment, gardée à part de selectedCommune (qui ne
    retient que le nom de la commune). Permet d'épingler une publication sur
    l'adresse exacte plutôt que sur le centre de la commune — utile pour un
-   événement ou un commerce à une adresse précise. */
+   événement ou un commerce à une adresse précise. Les deux méthodes sont
+   déclenchées explicitement par l'utilisateur (menu commune, ou bouton GPS) :
+   pas de tentative automatique au chargement de l'écran, pour rester fiable
+   même quand la détection GPS est lente ou refusée par le navigateur. */
 let myGpsLat = null, myGpsLng = null;
-// Affiche/masque le lien "Réessayer la position GPS précise" : visible dès
-// qu'on n'a pas (ou plus) de position exacte, pour permettre de relancer une
-// tentative GPS à tout moment (ex : refus de permission la première fois,
-// ou passage en saisie manuelle qu'on veut annuler).
-function updateLocRetryVisibility(){
-  const retry = document.getElementById('loc-retry');
-  if(retry) retry.style.display = (myGpsLat == null || myGpsLng == null) ? 'inline-flex' : 'none';
-}
-function simulateLocate(){
-  document.getElementById('loc-manual').style.display = 'none';
-  document.getElementById('loc-box').style.display = 'flex';
-  document.getElementById('loc-status').textContent = 'Localisation en cours…';
-  document.getElementById('loc-detail').textContent = 'Détection GPS automatique — modifiable si tu ne publies pas depuis le lieu concerné';
-  document.getElementById('loc-retry').style.display = 'none';
-  myGpsLat = null; myGpsLng = null;
-  clearTimeout(locTimer);
-  if(!navigator.geolocation){
-    document.getElementById('loc-status').textContent = 'GPS indisponible';
-    document.getElementById('loc-detail').textContent = 'Choisis ta commune manuellement ci-dessous';
-    toggleManualLocation();
-    updateLocRetryVisibility();
-    return;
-  }
-  navigator.geolocation.getCurrentPosition(pos => {
-    const nearest = nearestCommune(pos.coords.latitude, pos.coords.longitude);
-    selectedCommune = nearest ? nearest.label : 'Fort-de-France';
-    // Dès que le GPS répond, on garde la position exacte : elle sert
-    // automatiquement de lieu de publication (plus besoin d'une case à cocher).
-    myGpsLat = pos.coords.latitude; myGpsLng = pos.coords.longitude;
-    document.getElementById('loc-status').textContent = 'Position exacte détectée';
-    document.getElementById('loc-detail').textContent = '📍 ' + selectedCommune + ' — position précise, le pin sera placé exactement ici';
-    updateLocRetryVisibility();
-  }, err => {
-    // Le navigateur refuse ou ne peut pas localiser (permission refusée,
-    // GPS coupé, ou — à l'intérieur d'un aperçu Claude Artifact — la
-    // géolocalisation est souvent bloquée par l'iframe : ce cas précis ne se
-    // reproduira pas une fois l'app ouverte en dehors de l'aperçu).
-    document.getElementById('loc-status').textContent = 'Position indisponible';
-    document.getElementById('loc-detail').textContent = 'Autorise la localisation (ou réessaie ci-dessous) ou choisis ta commune manuellement';
-    toggleManualLocation();
-    updateLocRetryVisibility();
-  }, {enableHighAccuracy:true, timeout:10000});
-}
-function toggleManualLocation(){
-  clearTimeout(locTimer);
-  document.getElementById('loc-box').style.display = 'none';
-  document.getElementById('loc-manual').style.display = 'flex';
+function initLocationUI(){
   document.getElementById('f-commune').value = selectedCommune;
-  document.getElementById('f-commune').focus();
+  myGpsLat = null; myGpsLng = null;
+  document.getElementById('loc-detail').textContent = 'Choisis ta commune, ou utilise ta position GPS précise ci-dessous';
 }
-function confirmManualLocation(){
+function selectCommuneManually(){
   const val = document.getElementById('f-commune').value.trim();
   if(val) selectedCommune = val;
-  document.getElementById('loc-manual').style.display = 'none';
-  document.getElementById('loc-box').style.display = 'flex';
-  document.getElementById('loc-status').textContent = 'Position choisie';
-  document.getElementById('loc-detail').textContent = selectedCommune + ' (saisie manuelle)';
-  // Une commune choisie à la main n'a plus de rapport avec la position GPS
-  // réelle de l'utilisateur : on n'utilise plus ses coordonnées précises.
+  // Choisir une commune à la main n'a plus de rapport avec une éventuelle
+  // position GPS précédente : on n'utilise plus ces coordonnées précises.
   myGpsLat = null; myGpsLng = null;
-  updateLocRetryVisibility();
+  document.getElementById('loc-detail').textContent = selectedCommune + ' (commune choisie)';
+}
+function useExactGpsPosition(){
+  if(!navigator.geolocation){
+    toast('La géolocalisation n’est pas disponible sur cet appareil ou ce navigateur');
+    return;
+  }
+  document.getElementById('loc-detail').textContent = 'Localisation en cours…';
+  navigator.geolocation.getCurrentPosition(pos => {
+    const nearest = nearestCommune(pos.coords.latitude, pos.coords.longitude);
+    selectedCommune = nearest ? nearest.label : selectedCommune;
+    myGpsLat = pos.coords.latitude; myGpsLng = pos.coords.longitude;
+    document.getElementById('f-commune').value = selectedCommune;
+    document.getElementById('loc-detail').textContent = '📍 Position exacte activée — ' + selectedCommune;
+    toast('Position GPS exacte activée');
+  }, err => {
+    // code 1 = permission refusée (navigateur ou réglages de localisation du
+    // système) ; 2/3 = position indisponible ou délai dépassé.
+    const msg = err && err.code === 1
+      ? 'Autorisation refusée : active la localisation pour ce site dans les réglages de ton navigateur (et dans Réglages système > Confidentialité > Localisation sur Mac/iPhone)'
+      : 'Position indisponible, réessaie ou choisis ta commune ci-dessus';
+    document.getElementById('loc-detail').textContent = msg;
+    toast(msg);
+  }, {enableHighAccuracy:true, timeout:10000});
 }
 
 const URGENCY = ['Faible','Modérée','Élevée','Critique'];
@@ -2465,7 +2437,7 @@ function showScreen(name){
   if(name==='profil') renderProfile();
   if(name==='admin') renderAdmin();
   if(name==='notifications') renderNotifPrefs();
-  if(name==='publier') simulateLocate();
+  if(name==='publier') initLocationUI();
   if(name==='meteo'){ renderWeather(); renderWxReports(); }
   if(name==='randonnee'){ renderTrails(); renderHikeReports(); }
   if(name==='carte'){
