@@ -1138,6 +1138,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="stat-box"><div class="stat-num" id="stat-favs">0</div><div class="stat-label">Favoris</div></div>
       </div>
 
+      <div class="section-tag">Classement des membres actifs</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div id="my-rank-line" style="font-size:13px; color:var(--ink); font-weight:700;">—</div>
+        <div id="my-rank-badge" style="margin-top:6px; font-size:12px; color:var(--orange); font-weight:800; display:none;">🛡️ Membre actif — tu peux signaler du contenu et des membres</div>
+      </div>
+
       <div class="section-tag">Espaces</div>
       <div class="menu-list">
         <div class="menu-row" onclick="showScreen('commercant')">
@@ -1183,6 +1189,23 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
       </div>
       <div style="height:10px;"></div>
+    </section>
+
+    <!-- PROFIL D'UN AUTRE MEMBRE (ouvert depuis une publication) -->
+    <section class="screen" id="screen-user-profile">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen(userProfileReturnScreen)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Profil</div>
+      </div>
+      <div class="profile-hero">
+        <div class="profile-avatar" id="up-avatar">?</div>
+        <div class="profile-name" id="up-name">—</div>
+        <div class="profile-sub" id="up-rank">—</div>
+      </div>
+      <div style="padding:4px 18px 20px;">
+        <button type="button" class="submit-btn" id="up-report-btn" style="display:none; background:#FFEBEE; color:#D32F2F;" onclick="openReportModal('user')">🚩 Signaler ce membre</button>
+        <div style="font-size:11.5px; color:#78909C; margin-top:8px;">Réservé aux membres les plus actifs (classement), pour limiter les signalements abusifs.</div>
+      </div>
     </section>
 
     <!-- ESPACE COMMERÇANT -->
@@ -1460,6 +1483,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </form>
     </div>
   </div>
+
+  <div class="comments-overlay" id="report-overlay" onclick="if(event.target===this) closeReportModal()">
+    <div class="comments-sheet" style="max-height:48%;">
+      <div class="comments-head">
+        <span>Signaler</span>
+        <div class="icon-btn" onclick="closeReportModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        <div id="report-target-label" style="font-size:12.5px; color:var(--muted); margin-bottom:10px;"></div>
+        <textarea id="report-reason" rows="3" placeholder="Pourquoi signales-tu ceci ? (optionnel)" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; resize:vertical; box-sizing:border-box;"></textarea>
+        <button type="button" class="submit-btn" style="margin-top:10px; width:100%;" onclick="submitReport()">Envoyer le signalement</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1588,7 +1625,7 @@ async function loadRemotePosts(){
     const iLiked = likeRows.some(l=>l.user_id===currentUserId);
     const commentRows = (row.comments || []).slice().sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
     return {
-      id: row.id, remote:true,
+      id: row.id, remote:true, authorId: row.author_id,
       name: row.author_name || 'Testeur Zapy', initial: (row.author_name||'T')[0].toUpperCase(),
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
@@ -1613,6 +1650,38 @@ function timeAgo(iso){
   const h = Math.round(min/60);
   if(h < 24) return 'Il y a ' + h + 'h';
   return 'Il y a ' + Math.round(h/24) + 'j';
+}
+
+/* ---- Classement des membres actifs ----
+   Score d'engagement = somme des likes + confirmations reçus sur les
+   publications d'un auteur actuellement visibles (non expirées) : un reflet
+   de l'activité en cours, pas un historique permanent — une publication qui
+   expire retire sa part du score. Seuls les membres dans le top de ce
+   classement (TOP_ACTIVE_COUNT) peuvent signaler du contenu ou d'autres
+   membres, ce qui limite les signalements abusifs. */
+const TOP_ACTIVE_COUNT = 10;
+function computeActivityRanking(){
+  const byAuthor = new Map();
+  remotePosts.forEach(p => {
+    if(!p.authorId) return;
+    const engagement = (p.likes||0) + (p.clearConfirms||0);
+    if(!byAuthor.has(p.authorId)) byAuthor.set(p.authorId, {authorId:p.authorId, name:p.name, score:0});
+    const entry = byAuthor.get(p.authorId);
+    entry.score += engagement;
+    entry.name = p.name; // garde le pseudo le plus récent vu pour cet auteur
+  });
+  return Array.from(byAuthor.values()).sort((a,b)=>b.score-a.score);
+}
+function getUserRanking(authorId){
+  const ranking = computeActivityRanking();
+  const idx = ranking.findIndex(r=>r.authorId===authorId);
+  if(idx===-1) return {rank:null, score:0, total:ranking.length};
+  return {rank: idx+1, score: ranking[idx].score, total: ranking.length};
+}
+function isActiveMember(authorId){
+  if(!authorId) return false;
+  const {rank, score} = getUserRanking(authorId);
+  return rank!=null && rank<=TOP_ACTIVE_COUNT && score>0;
 }
 
 let suggestions = [
@@ -1682,9 +1751,9 @@ function renderPosts(){
     <div class="post-card ${p.cat==='trafic' && p.cleared ? 'cleared' : ''}" onclick="openComments('${p.id}')" style="cursor:pointer;">
       <div class="post-main">
         <div class="post-top">
-          <div class="avatar" style="background:${p.color}">${p.initial}</div>
+          <div class="avatar" style="background:${p.color}; ${p.authorId?'cursor:pointer;':''}" onclick="event.stopPropagation(); openUserProfileFromPost('${p.id}')">${p.initial}</div>
           <div>
-            <div class="post-name">${p.name} ${p.verified? '<svg width="12" height="12" viewBox="0 0 24 24" fill="#4FC3F7"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</div>
+            <div class="post-name" style="${p.authorId?'cursor:pointer;':''}" onclick="event.stopPropagation(); openUserProfileFromPost('${p.id}')">${p.name} ${p.verified? '<svg width="12" height="12" viewBox="0 0 24 24" fill="#4FC3F7"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</div>
             <div class="post-meta">${p.time} · ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? `<div class="duration-badge">⏱ Durée estimée ${DURATION_HINTS[p.urgency] || ''}</div>` : ''}</div>
           </div>
         </div>
@@ -1921,8 +1990,19 @@ function renderComments(){
     if(navCoord){ navLat = navCoord.lat; navLng = navCoord.lng; }
   }
   const navHtml = navLinksHtml(navLat, navLng);
+  // Auteur cliquable (ouvre son profil) + bouton signaler, réservé aux
+  // membres actifs et jamais affiché sur sa propre publication.
+  const isOwnPost = p.authorId && p.authorId === currentUserId;
+  const canReportPub = p.remote && isActiveMember(currentUserId) && !isOwnPost;
+  const authorHtml = p.authorId
+    ? `<span onclick="openUserProfileFromPost('${p.id}')" style="cursor:pointer; font-weight:800; color:var(--ink);">${p.name}</span>`
+    : `<span style="font-weight:800; color:var(--ink);">${p.name}</span>`;
+  const reportBtnHtml = canReportPub
+    ? `<span onclick="openReportModal('publication','${p.id}')" style="color:#D32F2F; font-weight:700; font-size:11.5px; cursor:pointer;">🚩 Signaler</span>`
+    : '';
   document.getElementById('comments-list').innerHTML =
-    `<div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">📍 ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? ` · ⏱ ${DURATION_HINTS[p.urgency]||''}` : ''}</div>`
+    `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:13px;">${authorHtml}${reportBtnHtml}</div>`
+    + `<div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">📍 ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? ` · ⏱ ${DURATION_HINTS[p.urgency]||''}` : ''}</div>`
     + galleryHtml
     + `<div style="font-size:13.5px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${p.text}</div>`
     + navHtml
@@ -2683,6 +2763,85 @@ function renderProfile(){
   document.getElementById('stat-pubs').textContent = mine.length;
   document.getElementById('stat-confirms').textContent = mine.reduce((s,p)=>s+p.likes,0);
   document.getElementById('stat-favs').textContent = suggestions.filter(s=>s.fav).length;
+  const rankLine = document.getElementById('my-rank-line');
+  const badge = document.getElementById('my-rank-badge');
+  if(rankLine && currentUserId){
+    const {rank, score, total} = getUserRanking(currentUserId);
+    rankLine.textContent = rank!=null
+      ? `#${rank} sur ${total} membre${total>1?'s':''} · ${score} point${score>1?'s':''} d'engagement`
+      : 'Pas encore classé — publie et reçois des likes/confirmations pour apparaître ici';
+    if(badge) badge.style.display = isActiveMember(currentUserId) ? 'block' : 'none';
+  }
+}
+
+/* ---- Profil d'un autre membre (ouvert depuis une publication) ---- */
+let userProfileReturnScreen = 'accueil';
+let viewedProfileAuthorId = null;
+function openUserProfileFromPost(id){
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(id));
+  if(!p) return;
+  openUserProfile(p.authorId, p.name);
+}
+function openUserProfile(authorId, authorName){
+  // Une publication locale (jamais partagée via Supabase) n'a pas d'auteur
+  // identifié : pas de profil consultable dans ce cas.
+  if(!authorId) return;
+  const activeEl = document.querySelector('.screen.active');
+  userProfileReturnScreen = activeEl ? activeEl.id.replace('screen-','') : 'accueil';
+  viewedProfileAuthorId = authorId;
+  document.getElementById('up-avatar').textContent = (authorName||'?')[0].toUpperCase();
+  document.getElementById('up-name').textContent = authorName || 'Membre Zapy';
+  const {rank, score, total} = getUserRanking(authorId);
+  document.getElementById('up-rank').textContent = rank!=null
+    ? `#${rank} sur ${total} membres · ${score} point${score>1?'s':''} d'engagement`
+    : 'Pas encore classé';
+  const isMe = authorId === currentUserId;
+  document.getElementById('up-report-btn').style.display = (!isMe && isActiveMember(currentUserId)) ? 'block' : 'none';
+  showScreen('user-profile');
+}
+
+/* ---- Signalement (publication ou membre) ----
+   Réservé aux membres actifs (voir isActiveMember), pour limiter les abus.
+   Enregistré dans Supabase (table reports) pour que l'équipe Zapy puisse
+   l'examiner — ce prototype n'affiche pas encore cette file d'attente côté
+   admin, mais les signalements sont bien conservés en base. */
+let reportTargetType = null;    // 'user' | 'publication'
+let reportTargetUserId = null;
+let reportTargetPubId = null;
+function openReportModal(type, pubId){
+  if(!currentUserId || !isActiveMember(currentUserId)){ toast('Réservé aux membres les plus actifs'); return; }
+  reportTargetType = type;
+  const label = document.getElementById('report-target-label');
+  if(type === 'user'){
+    reportTargetUserId = viewedProfileAuthorId;
+    reportTargetPubId = null;
+    label.textContent = 'Tu vas signaler ce membre à l’équipe Zapy.';
+  } else {
+    const pub = [...remotePosts, ...posts].find(x=>String(x.id)===String(pubId));
+    reportTargetPubId = pubId;
+    reportTargetUserId = null;
+    label.textContent = 'Tu vas signaler la publication « ' + (pub && pub.title || '') + ' » à l’équipe Zapy.';
+  }
+  document.getElementById('report-reason').value = '';
+  document.getElementById('report-overlay').classList.add('show');
+}
+function closeReportModal(){
+  document.getElementById('report-overlay').classList.remove('show');
+}
+async function submitReport(){
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const reason = document.getElementById('report-reason').value.trim();
+  const payload = {
+    reporter_id: currentUserId,
+    target_type: reportTargetType,
+    target_user_id: reportTargetType==='user' ? reportTargetUserId : null,
+    target_publication_id: reportTargetType==='publication' ? reportTargetPubId : null,
+    reason: reason || null,
+  };
+  const { error } = await sb.from('reports').insert(payload);
+  if(error){ console.warn('Signalement échoué', error); toast('Le signalement n’a pas pu être envoyé'); return; }
+  closeReportModal();
+  toast('Signalement envoyé — l’équipe va l’examiner');
 }
 
 /* ---- Administration ---- */
