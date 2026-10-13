@@ -66,7 +66,6 @@
     overflow:hidden; z-index:0;
   }
   .hero-strip img{width:100%; height:100%; object-fit:cover; display:block;}
-  .hero-fade{position:absolute; inset:0; background:linear-gradient(90deg,var(--surface) 18%,rgba(255,255,255,0) 55%);}
   .head-content{position:relative; z-index:1;}
   .logo-row{font-size:26px; display:flex; align-items:center; gap:2px;}
   .loc-pill{
@@ -986,6 +985,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <body>
 
 <div class="phone">
+  <!-- IDENTIFICATION (premier lancement) : bloque l'accès à l'app tant que
+       l'utilisateur n'a pas choisi un nom. Remplace l'ancien "mode démo" qui
+       connectait silencieusement tout le monde sous un pseudo auto-généré
+       (TesteurXXX972) sans qu'on sache qui est qui. Pas d'écran "Inscription"
+       séparé : ce seul champ sert à la fois d'identification et de création
+       de profil, un compte complet n'étant pas nécessaire ici. -->
+  <div id="onboarding-overlay" style="display:none; position:absolute; inset:0; z-index:500; background:var(--surface); flex-direction:column; align-items:center; justify-content:center; padding:32px 26px; text-align:center;">
+    <div class="logo-row logo" style="font-size:40px; margin-bottom:8px;"><span class="zap">Zap</span><span class="y">y</span></div>
+    <div style="font-size:13.5px; color:var(--muted); margin-bottom:30px; max-width:260px;">L'info locale de la Martinique, en temps réel.</div>
+    <div style="width:100%; max-width:280px;">
+      <div style="font-size:12.5px; font-weight:700; color:var(--ink); text-align:left; margin-bottom:6px;">Comment veux-tu qu'on t'appelle ?</div>
+      <input type="text" id="onboarding-pseudo" placeholder="Ex : Marie972" maxlength="30" style="width:100%; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:16px;" onkeydown="if(event.key==='Enter') submitOnboarding()">
+      <button type="button" class="submit-btn" style="width:100%;" onclick="submitOnboarding()">S'identifier</button>
+    </div>
+  </div>
+
   <div class="status">
     <span>9:41</span>
     <div style="display:flex; gap:5px; align-items:center;">
@@ -1000,7 +1015,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <!-- ACCUEIL -->
     <section class="screen active" id="screen-accueil">
       <div class="head">
-        <div class="hero-strip"><img src="./assets/hero.png" alt=""><div class="hero-fade"></div></div>
+        <div class="hero-strip"><img src="./assets/hero.png" alt=""></div>
         <div class="head-content">
           <div class="head-row">
             <div>
@@ -1178,17 +1193,9 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
       </div>
 
-      <div class="section-tag">Réservé à l'équipe Zapy (démo)</div>
-      <div style="padding:0 18px 4px; font-size:11px; color:var(--muted); line-height:1.35;">
-        Dans l'app réelle, cet accès sera protégé par une connexion admin séparée — un utilisateur normal ne le verra jamais.
-      </div>
-      <div class="menu-list">
-        <div class="menu-row" onclick="showScreen('admin')">
-          <div class="menu-ico" style="background:#263238"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
-          <div><div class="menu-label">Administration</div><div class="menu-sub">Utilisateurs, abonnements, facturation, modération</div></div>
-          <span style="color:var(--muted)">›</span>
-        </div>
-      </div>
+      <!-- L'accès "Administration" a été retiré de ce menu : il n'est plus
+           accessible qu'via le lien dédié (#admin), protégé par mot de passe
+           (voir screen-admin-lock) — un utilisateur normal ne le voit plus. -->
       <div style="height:10px;"></div>
     </section>
 
@@ -1255,6 +1262,26 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </section>
 
+    <!-- VERROU ADMINISTRATION — point d'entrée du lien dédié #admin. Un
+         utilisateur normal n'a aucun moyen d'atteindre cet écran depuis la
+         navigation habituelle de l'app (voir showScreen('admin-lock') dans
+         le routage par hash, et la suppression du menu "Administration" du
+         Profil). Le mot de passe est vérifié côté serveur (RPC
+         verify_admin_password) ; voir aussi "Sécurité" dans screen-admin
+         pour le changer. -->
+    <section class="screen" id="screen-admin-lock">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('accueil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Administration</div>
+      </div>
+      <div style="padding:50px 26px; text-align:center;">
+        <div style="font-size:34px; margin-bottom:10px;">🔒</div>
+        <div style="font-size:13.5px; color:var(--muted); margin-bottom:20px;">Accès réservé à l'équipe Zapy. Entre le mot de passe administrateur.</div>
+        <input type="password" id="admin-password-input" placeholder="Mot de passe" style="width:100%; max-width:260px; border:1px solid var(--line); border-radius:12px; padding:12px; font-family:inherit; font-size:14px; box-sizing:border-box; margin-bottom:14px; text-align:center;" onkeydown="if(event.key==='Enter') submitAdminPassword()">
+        <button type="button" class="submit-btn" style="max-width:260px; margin:0 auto; display:block;" onclick="submitAdminPassword()">Déverrouiller</button>
+      </div>
+    </section>
+
     <!-- ADMINISTRATION -->
     <section class="screen" id="screen-admin">
       <div class="sub-head">
@@ -1266,6 +1293,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="stat-box"><div class="stat-num" id="adm-users">0</div><div class="stat-label">Utilisateurs</div></div>
         <div class="stat-box"><div class="stat-num" id="adm-pubs">0</div><div class="stat-label">Publications actives</div></div>
         <div class="stat-box"><div class="stat-num" id="adm-revenue">0€</div><div class="stat-label">Revenus / mois</div></div>
+      </div>
+
+      <div class="section-tag">Sécurité</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Change le mot de passe qui protège cette page d'administration (lien : …/#admin).</div>
+        <input type="password" id="admin-old-password" placeholder="Mot de passe actuel" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:8px;">
+        <input type="password" id="admin-new-password" placeholder="Nouveau mot de passe (4 caractères min.)" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:10px;">
+        <button type="button" class="submit-btn" style="width:100%;" onclick="changeAdminPassword()">Changer le mot de passe</button>
       </div>
 
       <div class="section-tag">Paiement Stripe</div>
@@ -1406,7 +1441,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="sub-title">Randonnée en Martinique</div>
       </div>
       <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
-        Les plus beaux sentiers de l'île, avec niveau de difficulté et durée estimée. Touche un sentier pour voir le détail.
+        Les plus beaux sentiers de l'île, avec niveau de difficulté et durée estimée. Touche un sentier pour voir le détail. Un sentier que tu connais n'est pas dans la liste ? Ajoute-le pour les autres.
+      </div>
+      <div class="section-head" style="padding-top:6px;">
+        <h3>Sentiers</h3>
+        <div class="wx-share-btn" onclick="openAddTrailModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Ajouter un sentier</span>
+        </div>
       </div>
       <div class="trail-list" id="trail-list"></div>
 
@@ -1528,6 +1570,40 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </div>
   </div>
+
+  <div class="comments-overlay" id="add-trail-overlay" onclick="if(event.target===this) closeAddTrailModal()">
+    <div class="comments-sheet" style="max-height:72%;">
+      <div class="comments-head">
+        <span>Ajouter un sentier</span>
+        <div class="icon-btn" onclick="closeAddTrailModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        <div class="field-label">Nom du sentier</div>
+        <input type="text" id="trail-name" placeholder="Ex : Sentier des Ombrages" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 12px;">
+        <div class="field-label">Lieu / commune</div>
+        <input type="text" id="trail-place" placeholder="Ex : Fonds-Saint-Denis" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 12px;">
+        <div class="field-label">Difficulté</div>
+        <select id="trail-difficulty" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin:6px 0 12px;">
+          <option value="Facile">Facile</option>
+          <option value="Modérée" selected>Modérée</option>
+          <option value="Difficile">Difficile</option>
+        </select>
+        <div style="display:flex; gap:10px; margin-bottom:12px;">
+          <div style="flex:1;">
+            <div class="field-label">Durée</div>
+            <input type="text" id="trail-duration" placeholder="Ex : 2h (A/R)" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-top:6px;">
+          </div>
+          <div style="flex:1;">
+            <div class="field-label">Distance</div>
+            <input type="text" id="trail-distance" placeholder="Ex : 5 km" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-top:6px;">
+          </div>
+        </div>
+        <div class="field-label">Description (optionnel)</div>
+        <textarea id="trail-desc" rows="3" placeholder="Ce qu'il faut savoir avant d'y aller…" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; resize:vertical; box-sizing:border-box; margin-top:6px;"></textarea>
+        <button type="button" class="submit-btn" style="margin-top:14px; width:100%;" onclick="submitAddTrail()">Ajouter le sentier</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1617,6 +1693,52 @@ function getPseudo(){
   return p;
 }
 
+/* Identification au premier lancement : tant qu'aucun pseudo n'est
+   enregistré, l'app reste bloquée sur onboarding-overlay (voir son HTML)
+   et initBackend() n'est pas encore appelé — voir la séquence d'amorçage
+   tout en bas du script. */
+function submitOnboarding(){
+  const input = document.getElementById('onboarding-pseudo');
+  const val = input.value.trim();
+  if(!val){ toast('Indique un nom pour continuer'); return; }
+  try{ localStorage.setItem('zapy_pseudo', val); }catch(e){}
+  document.getElementById('onboarding-overlay').style.display = 'none';
+  initBackend().then(routeFromHash);
+}
+
+/* Lien dédié (…/#admin, …/#commerce) : ouvre directement le bon écran au
+   chargement, sans passer par l'accueil. L'administration reste en plus
+   protégée par mot de passe (screen-admin-lock → verify_admin_password). */
+function routeFromHash(){
+  const hash = (location.hash || '').replace('#','');
+  if(hash === 'admin') showScreen('admin-lock');
+  else if(hash === 'commerce') showScreen('commercant');
+}
+async function submitAdminPassword(){
+  const input = document.getElementById('admin-password-input');
+  const pwd = input.value;
+  if(!pwd){ toast('Entre le mot de passe'); return; }
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
+  const { data, error } = await sb.rpc('verify_admin_password', { input_password: pwd });
+  if(error){ console.warn('Vérification mot de passe échouée', error); toast('Erreur, réessaie'); return; }
+  if(data === true){ input.value = ''; showScreen('admin'); }
+  else { toast('Mot de passe incorrect'); }
+}
+async function changeAdminPassword(){
+  const oldPwd = document.getElementById('admin-old-password').value;
+  const newPwd = document.getElementById('admin-new-password').value;
+  if(!oldPwd || !newPwd){ toast('Remplis les deux champs'); return; }
+  const { data, error } = await sb.rpc('change_admin_password', { old_password: oldPwd, new_password: newPwd });
+  if(error){ console.warn('Changement de mot de passe échoué', error); toast('Erreur, réessaie'); return; }
+  if(data === true){
+    document.getElementById('admin-old-password').value = '';
+    document.getElementById('admin-new-password').value = '';
+    toast('Mot de passe administrateur changé');
+  } else {
+    toast('Mot de passe actuel incorrect, ou nouveau trop court');
+  }
+}
+
 async function initBackend(){
   try{
     if(typeof supabase === 'undefined'){ console.warn('Supabase JS non chargé'); return; }
@@ -1656,8 +1778,12 @@ async function initBackend(){
     sb.channel('public:hike_reports')
       .on('postgres_changes', {event:'*', schema:'public', table:'hike_reports'}, () => { loadRemoteHikeReports(); })
       .subscribe();
+    sb.channel('public:trails')
+      .on('postgres_changes', {event:'*', schema:'public', table:'trails'}, () => { loadRemoteTrails(); })
+      .subscribe();
     await loadRemoteWxReports();
     await loadRemoteHikeReports();
+    await loadRemoteTrails();
   }catch(e){ console.warn('Backend partagé indisponible, mode local uniquement', e); }
 }
 
@@ -2542,7 +2668,7 @@ async function actuallyPublish(){
 function showScreen(name){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','notifications'].includes(name))));
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','admin-lock','notifications'].includes(name))));
   document.getElementById('screen-area').scrollTop = 0;
   if(name==='profil') renderProfile();
   if(name==='admin') renderAdmin();
@@ -2730,14 +2856,41 @@ const TRAILS = [
   {name:'Rocher du Diamant — point de vue', place:'Le Diamant', difficulty:'Modérée', duration:'1h (A/R)', distance:'3 km', icon:'📍',
    desc:'Montée vers un point de vue panoramique sur le rocher du Diamant et la côte sud.'},
 ];
+/* Sentiers ajoutés par la communauté (table Supabase trails), en plus des
+   sentiers éditoriaux fixes ci-dessus — mêmes champs affichés, icône
+   générique faute de choix d'icône dans le formulaire d'ajout, et mention
+   de l'auteur pour les distinguer visuellement du contenu éditorial. */
+let remoteTrails = [];
+function getAllTrails(){ return TRAILS.concat(remoteTrails); }
+async function loadRemoteTrails(){
+  if(!sb) return;
+  const { data, error } = await sb.from('trails').select('*').order('created_at', {ascending:false});
+  if(error){ console.warn('Erreur sentiers communauté', error); return; }
+  remoteTrails = (data||[]).map(r => ({
+    name: r.name, place: r.place || '—', difficulty: r.difficulty || 'Modérée',
+    duration: r.duration || '—', distance: r.distance || '—', icon: '🥾',
+    desc: r.description || 'Sentier ajouté par un membre de la communauté.',
+    authorName: r.author_name || null,
+  }));
+  renderTrails();
+  // Un sentier tout juste ajouté doit être immédiatement sélectionnable
+  // pour un signalement de condition si le formulaire est déjà ouvert.
+  if(hikeFormOpen){
+    document.getElementById('f-hike-trail').innerHTML = getAllTrails().map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+  }
+  const quickTrailSub = document.getElementById('quick-trail-sub');
+  if(quickTrailSub) quickTrailSub.textContent = getAllTrails().length + ' sentiers à découvrir';
+}
+let displayedTrails = [];
 function renderTrails(){
   const badgeColor = {Facile:'#2E9E5B', 'Modérée':'#FF8A00', Difficile:'#E5484D'};
   const badgeBg = {Facile:'#E3F6E8', 'Modérée':'#FFF1E0', Difficile:'#FDECEA'};
-  document.getElementById('trail-list').innerHTML = TRAILS.map((t,i) => `
+  displayedTrails = getAllTrails();
+  document.getElementById('trail-list').innerHTML = displayedTrails.map((t,i) => `
     <div class="trail-card" onclick="trailInfo(${i})">
       <div class="trail-ico">${t.icon}</div>
       <div class="trail-main">
-        <div class="trail-name">${t.name}</div>
+        <div class="trail-name">${t.name}${t.authorName ? ' <span style="font-weight:600; font-size:10px; color:var(--muted);">· ajouté par '+t.authorName+'</span>' : ''}</div>
         <div class="trail-place">📍 ${t.place}</div>
         <div class="trail-meta">
           <span class="trail-badge" style="color:${badgeColor[t.difficulty]}; background:${badgeBg[t.difficulty]};">${t.difficulty}</span>
@@ -2746,6 +2899,37 @@ function renderTrails(){
         </div>
       </div>
     </div>`).join('');
+}
+function openAddTrailModal(){
+  document.getElementById('trail-name').value = '';
+  document.getElementById('trail-place').value = '';
+  document.getElementById('trail-difficulty').value = 'Modérée';
+  document.getElementById('trail-duration').value = '';
+  document.getElementById('trail-distance').value = '';
+  document.getElementById('trail-desc').value = '';
+  document.getElementById('add-trail-overlay').classList.add('show');
+}
+function closeAddTrailModal(){
+  document.getElementById('add-trail-overlay').classList.remove('show');
+}
+async function submitAddTrail(){
+  const name = document.getElementById('trail-name').value.trim();
+  if(!name){ toast('Indique le nom du sentier'); return; }
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const place = document.getElementById('trail-place').value.trim();
+  const difficulty = document.getElementById('trail-difficulty').value;
+  const duration = document.getElementById('trail-duration').value.trim();
+  const distance = document.getElementById('trail-distance').value.trim();
+  const description = document.getElementById('trail-desc').value.trim();
+  const { error } = await sb.from('trails').insert({
+    author_id: currentUserId, author_name: myPseudo, name,
+    place: place || null, difficulty, duration: duration || null,
+    distance: distance || null, description: description || null,
+  });
+  if(error){ console.warn('Ajout du sentier échoué', error); toast('Erreur, réessaie'); return; }
+  closeAddTrailModal();
+  await loadRemoteTrails();
+  toast('Sentier ajouté — merci !');
 }
 
 /* ---- Randonnée communauté ---- */
@@ -2773,7 +2957,7 @@ function toggleHikeForm(){
   document.getElementById('hike-share-toggle').querySelector('span').textContent = hikeFormOpen ? 'Fermer' : 'Partager';
   if(hikeFormOpen){
     renderHikeCondPicker();
-    document.getElementById('f-hike-trail').innerHTML = TRAILS.map(t => `<option value="${t.name}">${t.name}</option>`).join('');
+    document.getElementById('f-hike-trail').innerHTML = getAllTrails().map(t => `<option value="${t.name}">${t.name}</option>`).join('');
   }
 }
 function renderHikeCondPicker(){
@@ -2842,7 +3026,7 @@ function renderHikeReports(){
 }
 
 function trailInfo(i){
-  const t = TRAILS[i];
+  const t = displayedTrails[i];
   document.getElementById('comments-title').textContent = t.icon + ' ' + t.name;
   document.getElementById('comments-list').innerHTML = `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">📍 ${t.place} · ⏱ ${t.duration} · 📏 ${t.distance}</div>
@@ -3276,7 +3460,22 @@ initNotifPrefs();
 renderMapMarkers();
 document.getElementById('quick-wx-sub').textContent = WEATHER_NOW.temp + '°C · ' + WEATHER_NOW.place;
 document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' sentiers à découvrir';
-initBackend();
+
+/* Amorçage : un pseudo déjà enregistré (retour d'un utilisateur) ou une
+   arrivée directe par lien dédié (#admin, #commerce — réservés à l'équipe
+   Zapy / au client, pas à un testeur anonyme) sautent l'identification et
+   démarrent directement ; sinon onboarding-overlay reste affiché jusqu'à
+   ce que submitOnboarding() soit appelé. */
+(function(){
+  let savedPseudo = null;
+  try{ savedPseudo = localStorage.getItem('zapy_pseudo'); }catch(e){}
+  const directHash = (location.hash || '').replace('#','');
+  if(savedPseudo || directHash === 'admin' || directHash === 'commerce'){
+    initBackend().then(routeFromHash);
+  } else {
+    document.getElementById('onboarding-overlay').style.display = 'flex';
+  }
+})();
 </script>
 </body>
 </html>
