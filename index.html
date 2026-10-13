@@ -1183,7 +1183,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <!-- PROFIL -->
     <section class="screen" id="screen-profil">
       <div class="profile-hero">
-        <div class="profile-avatar" id="profile-avatar">T</div>
+        <div class="profile-avatar" id="profile-avatar" onclick="document.getElementById('avatar-upload-input').click()" style="cursor:pointer; overflow:hidden;" title="Changer la photo">T</div>
+        <input type="file" id="avatar-upload-input" accept="image/*" style="display:none;" onchange="handleAvatarUpload(event)">
         <div class="profile-name" id="profile-name">Toi972</div>
         <div class="profile-sub">Membre depuis septembre 2026 · Fort-de-France</div>
       </div>
@@ -1211,6 +1212,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <div><div class="menu-label">Espace artiste</div><div class="menu-sub">Partagez créations et événements</div></div>
           <span style="color:var(--muted)">›</span>
         </div>
+        <div class="menu-row" id="profil-admin-link" style="display:none;" onclick="showScreen('admin')">
+          <div class="menu-ico" style="background:#5C6BC0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 4v5"/></svg></div>
+          <div><div class="menu-label">Administration</div><div class="menu-sub">Statistiques, tarifs, modération</div></div>
+          <span style="color:var(--muted)">›</span>
+        </div>
       </div>
 
       <div class="section-tag">Préférences</div>
@@ -1230,14 +1236,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <div class="menu-label">Aide &amp; support</div>
           <span style="color:var(--muted)">›</span>
         </div>
-        <div class="menu-row" onclick="openAdminPasswordProfile()">
-          <div class="menu-ico" style="background:#5C6BC0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M21 2l-9.6 9.6"/><path d="M15.5 7.5l3 3L22 7l-3-3"/></svg></div>
-          <div class="menu-label">Mot de passe administrateur</div>
-          <span style="color:var(--muted)">›</span>
-        </div>
         <div class="menu-row" onclick="logout()">
           <div class="menu-ico" style="background:#D32F2F"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></div>
           <div class="menu-label">Se déconnecter</div>
+          <span style="color:var(--muted)">›</span>
+        </div>
+        <div class="menu-row" onclick="confirmDeleteAccount()">
+          <div class="menu-ico" style="background:#1A1A1A"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
+          <div class="menu-label" style="color:#D32F2F;">Supprimer mon compte</div>
           <span style="color:var(--muted)">›</span>
         </div>
       </div>
@@ -1311,13 +1317,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
     </section>
 
-    <!-- VERROU ADMINISTRATION — point d'entrée du lien dédié #admin. Un
-         utilisateur normal n'a aucun moyen d'atteindre cet écran depuis la
-         navigation habituelle de l'app (voir showScreen('admin-lock') dans
-         le routage par hash, et la suppression du menu "Administration" du
-         Profil). Le mot de passe est vérifié côté serveur (RPC
-         verify_admin_password) ; voir aussi "Sécurité" dans screen-admin
-         pour le changer. -->
+    <!-- VERROU ADMINISTRATION — seul point d'entrée pour devenir ou rester
+         administrateur, volontairement réservé au lien dédié …/#admin (un
+         utilisateur normal ne le voit nulle part dans la navigation
+         habituelle — voir showScreen('admin-lock') dans le routage par
+         hash). Le mot de passe est vérifié côté serveur (RPC
+         verify_admin_password), qui accorde aussi profiles.role='admin' en
+         cas de succès ; voir "Sécurité" dans screen-admin pour le changer
+         une fois admin. Le lien "Administration" du Profil (menu-row
+         #profil-admin-link) n'apparaît lui-même qu'une fois ce rôle déjà
+         acquis — ce n'est pas un second point d'entrée. -->
     <section class="screen" id="screen-admin-lock">
       <div class="sub-head">
         <div class="icon-btn" onclick="showScreen('accueil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
@@ -1664,32 +1673,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </div>
   </div>
 
-  <!-- MOT DE PASSE ADMINISTRATEUR, accessible depuis Profil → Préférences.
-       Tant que personne n'est encore administrateur (profiles.role='admin'),
-       n'importe quel utilisateur peut en choisir un et le devenir
-       (claim_admin_password, une seule fois) : plus besoin qu'un mot de
-       passe par défaut lui soit communiqué. Une fois un administrateur
-       établi, ce même écran demande l'ancien mot de passe pour le changer
-       (change_admin_password). -->
-  <div class="comments-overlay" id="admin-password-overlay" onclick="if(event.target===this) closeAdminPasswordProfile()">
-    <div class="comments-sheet" style="max-height:60%;">
-      <div class="comments-head">
-        <span id="adm-pwd-title">Mot de passe administrateur</span>
-        <div class="icon-btn" onclick="closeAdminPasswordProfile()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
-      </div>
-      <div style="padding:14px 18px; overflow-y:auto;">
-        <div id="adm-pwd-sub" style="font-size:12px; color:var(--muted); margin-bottom:12px;"></div>
-        <div id="adm-pwd-old-wrap" style="display:none;">
-          <div class="field-label">Mot de passe actuel</div>
-          <input type="password" id="adm-pwd-old" autocomplete="current-password" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 12px;">
-        </div>
-        <div class="field-label">Nouveau mot de passe</div>
-        <input type="password" id="adm-pwd-new" autocomplete="new-password" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin:6px 0 4px;">
-        <div id="adm-pwd-error" style="font-size:11.5px; color:#D32F2F; text-align:left; min-height:14px; margin-bottom:8px;"></div>
-        <button type="button" class="submit-btn" id="adm-pwd-submit-btn" style="margin-top:4px; width:100%;" onclick="submitAdminPasswordProfile()">Créer mon mot de passe</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -1755,6 +1738,8 @@ if(sb){
 }
 let currentUserId = null;
 let myPseudo = null;
+let myAvatarUrl = null;
+let amIAdmin = false;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
 let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
 
@@ -1966,6 +1951,12 @@ function routeFromHash(){
   const hash = (location.hash || '').replace('#','');
   if(hash === 'admin') showScreen('admin-lock');
   else if(hash === 'commerce') showScreen('commercant');
+  else if(hash.startsWith('post=')){
+    const id = hash.slice('post='.length);
+    const exists = [...remotePosts, ...posts].some(p => String(p.id) === String(id));
+    if(exists) openComments(id);
+    else toast('Cette publication n’existe plus');
+  }
 }
 async function submitAdminPassword(){
   const input = document.getElementById('admin-password-input');
@@ -1974,7 +1965,13 @@ async function submitAdminPassword(){
   if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
   const { data, error } = await sb.rpc('verify_admin_password', { input_password: pwd });
   if(error){ console.warn('Vérification mot de passe échouée', error); toast('Erreur, réessaie'); return; }
-  if(data === true){ input.value = ''; showScreen('admin'); }
+  if(data === true){
+    input.value = '';
+    amIAdmin = true;
+    const linkEl = document.getElementById('profil-admin-link');
+    if(linkEl) linkEl.style.display = 'flex';
+    showScreen('admin');
+  }
   else { toast('Mot de passe incorrect'); }
 }
 async function changeAdminPassword(){
@@ -1989,62 +1986,6 @@ async function changeAdminPassword(){
     toast('Mot de passe administrateur changé');
   } else {
     toast('Mot de passe actuel incorrect, ou nouveau trop court');
-  }
-}
-
-/* Mot de passe administrateur depuis Profil : même mécanisme que la section
-   "Sécurité" de screen-admin, mais accessible sans avoir déjà déverrouillé
-   l'administration — utile la toute première fois, puisque tant que
-   personne n'est encore admin, claim_admin_password() permet de choisir un
-   mot de passe sans en connaître un ancien. */
-let adminPasswordIsChangeMode = false;
-async function openAdminPasswordProfile(){
-  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
-  const { data } = await sb.from('profiles').select('role').eq('id', currentUserId).maybeSingle();
-  const isAdmin = data && data.role === 'admin';
-  adminPasswordIsChangeMode = isAdmin;
-  document.getElementById('adm-pwd-old-wrap').style.display = isAdmin ? 'block' : 'none';
-  document.getElementById('adm-pwd-title').textContent = isAdmin ? 'Changer le mot de passe administrateur' : 'Créer le mot de passe administrateur';
-  document.getElementById('adm-pwd-sub').textContent = isAdmin
-    ? 'Tu es déjà administrateur. Indique ton mot de passe actuel pour le changer.'
-    : 'Personne n\'a encore créé de mot de passe administrateur. Choisis-en un : tu deviendras administrateur de l\'app (accès via …/#admin).';
-  document.getElementById('adm-pwd-submit-btn').textContent = isAdmin ? 'Changer le mot de passe' : 'Créer mon mot de passe';
-  document.getElementById('adm-pwd-old').value = '';
-  document.getElementById('adm-pwd-new').value = '';
-  document.getElementById('adm-pwd-error').textContent = '';
-  document.getElementById('admin-password-overlay').classList.add('show');
-}
-function closeAdminPasswordProfile(){
-  document.getElementById('admin-password-overlay').classList.remove('show');
-}
-async function submitAdminPasswordProfile(){
-  const errEl = document.getElementById('adm-pwd-error');
-  errEl.textContent = '';
-  const newPwd = document.getElementById('adm-pwd-new').value;
-  if(!newPwd || newPwd.trim().length < 4){ errEl.textContent = 'Le mot de passe doit faire au moins 4 caractères.'; return; }
-  const btn = document.getElementById('adm-pwd-submit-btn');
-  btn.disabled = true;
-  try{
-    let data, error;
-    if(adminPasswordIsChangeMode){
-      const oldPwd = document.getElementById('adm-pwd-old').value;
-      if(!oldPwd){ errEl.textContent = 'Indique ton mot de passe actuel.'; return; }
-      ({ data, error } = await sb.rpc('change_admin_password', { old_password: oldPwd, new_password: newPwd }));
-    } else {
-      ({ data, error } = await sb.rpc('claim_admin_password', { new_password: newPwd }));
-    }
-    if(error){ console.warn('Erreur mot de passe administrateur', error); errEl.textContent = 'Erreur, réessaie.'; return; }
-    if(data === true){
-      closeAdminPasswordProfile();
-      toast(adminPasswordIsChangeMode ? 'Mot de passe administrateur changé' : 'Mot de passe administrateur créé — tu es maintenant administrateur');
-    } else {
-      errEl.textContent = adminPasswordIsChangeMode ? 'Mot de passe actuel incorrect, ou nouveau trop court' : 'Un administrateur existe déjà, ou mot de passe trop court';
-    }
-  } catch(e){
-    console.warn('Erreur réseau', e);
-    errEl.textContent = 'Erreur réseau, réessaie.';
-  } finally {
-    btn.disabled = false;
   }
 }
 
@@ -2085,8 +2026,12 @@ async function initBackend(){
     }
     currentUserId = session.user.id;
     // Le profil doit exister avant toute publication : author_id référence profiles(id).
+    // N'écrase pas avatar_url (non inclus dans la ligne envoyée, donc
+    // laissé tel quel par ON CONFLICT DO UPDATE côté serveur).
     const { error: profileError } = await sb.from('profiles').upsert({ id: currentUserId, pseudo: myPseudo }, { onConflict: 'id' });
     if(profileError){ console.warn('Création du profil impossible', profileError); }
+    const { data: myProfileRow } = await sb.from('profiles').select('avatar_url').eq('id', currentUserId).maybeSingle();
+    myAvatarUrl = (myProfileRow && myProfileRow.avatar_url) || null;
     await loadRemotePosts();
     await loadMyPlan();
     sb.channel('public:merchant_subscriptions')
@@ -2284,7 +2229,7 @@ function renderPosts(){
         <div class="post-actions">
           <div class="action ${p.liked?'liked':''}" onclick="event.stopPropagation(); toggleLike('${p.id}')">${heartIcon(p.liked)}<span>${p.likes}</span></div>
           <div class="action" onclick="event.stopPropagation(); openComments('${p.id}')">${commentIcon}<span>${p.commentCount}</span></div>
-          <div class="action" onclick="event.stopPropagation(); toast('Partagé !')">${shareIcon}<span>Partager</span></div>
+          <div class="action" onclick="event.stopPropagation(); sharePost('${p.id}')">${shareIcon}<span>Partager</span></div>
           ${p.cat==='trafic' && !p.cleared ? `<div class="clear-btn" onclick="event.stopPropagation(); confirmCleared('${p.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2E9E5B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>C'est dégagé ?</span></div>` : ''}
         </div>
       </div>
@@ -2312,6 +2257,24 @@ async function toggleLike(id){
   p.liked = !p.liked;
   p.likes += p.liked ? 1 : -1;
   renderPosts();
+}
+
+/* Partage d'une publication : construit un lien direct (#post=<id>) qui
+   rouvre précisément cette publication grâce à routeFromHash(). Sur
+   mobile, ouvre le partage natif du système (SMS, WhatsApp, etc.) ; sur
+   desktop (ou si le partage natif est indisponible), copie le lien dans
+   le presse-papiers. */
+function sharePost(id){
+  const url = location.origin + location.pathname + '#post=' + encodeURIComponent(id);
+  const p = [...remotePosts, ...posts].find(x => String(x.id) === String(id));
+  const shareData = { title: 'Zapy', text: (p && p.title) || 'Une publication sur Zapy', url };
+  if(navigator.share){
+    navigator.share(shareData).catch(()=>{});
+  } else if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(() => toast('Lien copié !')).catch(() => toast(url));
+  } else {
+    toast(url);
+  }
 }
 
 /* ---- Commentaires ---- */
@@ -3408,11 +3371,31 @@ function initTheme(){
 }
 
 /* ---- Profil ---- */
+/* Affiche le lien "Administration" dans Profil > Espaces uniquement pour
+   un administrateur confirmé côté serveur (role === 'admin') — asynchrone,
+   ne bloque pas le reste du rendu de la page Profil, qui s'affiche d'abord
+   avec le lien masqué par défaut puis mis à jour dès que la réponse arrive. */
+async function refreshAdminLinkVisibility(){
+  const linkEl = document.getElementById('profil-admin-link');
+  if(!linkEl) return;
+  if(!sb || !currentUserId){ linkEl.style.display = 'none'; return; }
+  try{
+    const { data } = await sb.from('profiles').select('role').eq('id', currentUserId).maybeSingle();
+    amIAdmin = !!(data && data.role === 'admin');
+  }catch(e){ amIAdmin = false; }
+  linkEl.style.display = amIAdmin ? 'flex' : 'none';
+}
+
 function renderProfile(){
   const nameEl = document.getElementById('profile-name');
   const avatarEl = document.getElementById('profile-avatar');
   if(nameEl) nameEl.textContent = myPseudo || 'Toi';
-  if(avatarEl) avatarEl.textContent = (myPseudo || 'T').charAt(0).toUpperCase();
+  if(avatarEl){
+    avatarEl.innerHTML = myAvatarUrl
+      ? `<img src="${myAvatarUrl}" style="width:100%; height:100%; object-fit:cover; display:block;">`
+      : (myPseudo || 'T').charAt(0).toUpperCase();
+  }
+  refreshAdminLinkVisibility();
   const mine = posts.filter(p=>p.name==='Toi');
   document.getElementById('stat-pubs').textContent = mine.length;
   document.getElementById('stat-confirms').textContent = mine.reduce((s,p)=>s+p.likes,0);
@@ -3426,6 +3409,45 @@ function renderProfile(){
       : 'Pas encore classé — publie et reçois des likes/confirmations pour apparaître ici';
     if(badge) badge.style.display = isActiveMember(currentUserId) ? 'block' : 'none';
   }
+}
+
+/* Photo de profil : même mécanisme que les photos de publication (lu en
+   base64 côté client, stocké tel quel — pas de bucket Storage dans ce
+   prototype), mais enregistré dans profiles.avatar_url pour être visible
+   par tous les autres membres qui consultent ce profil. */
+function handleAvatarUpload(event){
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if(!file) return;
+  if(!file.type || !file.type.startsWith('image/')){ toast('Choisis une image'); return; }
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    const dataUrl = ev.target.result;
+    if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
+    const { error } = await sb.from('profiles').update({ avatar_url: dataUrl }).eq('id', currentUserId);
+    if(error){ console.warn('Erreur photo de profil', error); toast('Erreur, réessaie'); return; }
+    myAvatarUrl = dataUrl;
+    renderProfile();
+    toast('Photo de profil mise à jour');
+  };
+  reader.readAsDataURL(file);
+}
+
+/* Suppression du compte : irréversible, demande une confirmation explicite
+   avant d'appeler delete_own_account() (RPC serveur qui supprime la ligne
+   auth.users — tout le reste, profil compris, est supprimé en cascade côté
+   base). Après succès, pas de session à nettoyer : elle n'existe plus. */
+function confirmDeleteAccount(){
+  if(!confirm('Supprimer définitivement ton compte ? Toutes tes publications, commentaires et données associées seront supprimés. Cette action est irréversible.')) return;
+  doDeleteAccount();
+}
+async function doDeleteAccount(){
+  if(!sb){ toast('Connexion indisponible, réessaie'); return; }
+  const { error } = await sb.rpc('delete_own_account');
+  if(error){ console.warn('Erreur suppression du compte', error); toast('Erreur, réessaie'); return; }
+  try{ localStorage.removeItem('zapy_pseudo'); }catch(e){}
+  try{ await sb.auth.signOut(); }catch(e){}
+  location.reload();
 }
 
 /* ---- Profil d'un autre membre (ouvert depuis une publication) ---- */
