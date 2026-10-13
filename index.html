@@ -2211,19 +2211,47 @@ function selectCommuneManually(){
 function isIOSDevice(){
   return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 }
+/* Transforme des coordonnées GPS en adresse lisible (ex: "12 Rue X, La
+   Trinité") via le service gratuit Nominatim (OpenStreetMap). Best-effort :
+   si la requête échoue, est trop lente ou le service est limité, on retombe
+   sur le nom de la commune déjà calculé par nearestCommune — l'app reste
+   utilisable sans adresse précise affichée. Passer en production à grande
+   échelle demandera probablement un service payant (Google/Mapbox) avec clé
+   API, Nominatim n'étant prévu que pour un usage raisonnable. */
+async function reverseGeocode(lat, lng){
+  try{
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+      headers: { 'Accept-Language': 'fr' }
+    });
+    if(!res.ok) return null;
+    const data = await res.json();
+    return data && data.display_name ? data.display_name : null;
+  }catch(e){
+    return null;
+  }
+}
 function useExactGpsPosition(){
   if(!navigator.geolocation){
     toast('La géolocalisation n’est pas disponible sur cet appareil ou ce navigateur');
     return;
   }
   document.getElementById('loc-detail').textContent = 'Localisation en cours…';
-  navigator.geolocation.getCurrentPosition(pos => {
+  navigator.geolocation.getCurrentPosition(async pos => {
     const nearest = nearestCommune(pos.coords.latitude, pos.coords.longitude);
     selectedCommune = nearest ? nearest.label : selectedCommune;
     myGpsLat = pos.coords.latitude; myGpsLng = pos.coords.longitude;
     document.getElementById('f-commune').value = selectedCommune;
-    document.getElementById('loc-detail').textContent = '📍 Position exacte activée — ' + selectedCommune;
+    document.getElementById('loc-detail').textContent = '📍 Position exacte activée — ' + selectedCommune + ' (recherche de l’adresse…)';
     toast('Position GPS exacte activée');
+    const address = await reverseGeocode(myGpsLat, myGpsLng);
+    // La position a pu changer de nouveau pendant la requête réseau (clic
+    // répété, ou retour à la sélection par commune) : on n'écrase l'affichage
+    // que si on est toujours sur cette même position GPS exacte.
+    if(myGpsLat === pos.coords.latitude && myGpsLng === pos.coords.longitude){
+      document.getElementById('loc-detail').textContent = address
+        ? '📍 ' + address
+        : '📍 Position exacte activée — ' + selectedCommune;
+    }
   }, err => {
     // code 1 = permission refusée. Aucun site web ne peut ouvrir directement
     // les réglages du téléphone (restriction de sécurité commune à tous les
