@@ -1151,8 +1151,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <!-- PROFIL -->
     <section class="screen" id="screen-profil">
       <div class="profile-hero">
-        <div class="profile-avatar">T</div>
-        <div class="profile-name">Toi972</div>
+        <div class="profile-avatar" id="profile-avatar">T</div>
+        <div class="profile-name" id="profile-name">Toi972</div>
         <div class="profile-sub">Membre depuis septembre 2026 · Fort-de-France</div>
       </div>
       <div class="stat-row">
@@ -3173,6 +3173,10 @@ function initTheme(){
 
 /* ---- Profil ---- */
 function renderProfile(){
+  const nameEl = document.getElementById('profile-name');
+  const avatarEl = document.getElementById('profile-avatar');
+  if(nameEl) nameEl.textContent = myPseudo || 'Toi';
+  if(avatarEl) avatarEl.textContent = (myPseudo || 'T').charAt(0).toUpperCase();
   const mine = posts.filter(p=>p.name==='Toi');
   document.getElementById('stat-pubs').textContent = mine.length;
   document.getElementById('stat-confirms').textContent = mine.reduce((s,p)=>s+p.likes,0);
