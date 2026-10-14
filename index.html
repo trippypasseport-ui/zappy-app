@@ -339,6 +339,14 @@
   .feed-loading{display:flex; flex-direction:column; align-items:center; gap:10px; padding:40px 0; color:var(--muted); font-size:13px;}
   .feed-spinner{width:28px; height:28px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--orange); animation:feed-spin 0.8s linear infinite;}
   @keyframes feed-spin{ to{ transform:rotate(360deg); } }
+
+  /* ---- Tire-vers-le-bas pour rafraîchir (voir le script tout en bas) ----
+     Un seul indicateur partagé par tous les écrans (il rafraîchit les
+     données de l'écran actuellement affiché, voir refreshCurrentScreen()) :
+     position et opacité pilotées en JS pendant le geste de tirage, la
+     rotation tourne en continu en CSS — invisible tant que opacity:0. */
+  .pull-refresh{position:absolute; top:4px; left:50%; width:34px; height:34px; display:flex; align-items:center; justify-content:center; opacity:0; pointer-events:none; z-index:40; transform:translate(-50%, 0px);}
+  .pull-refresh-spinner{width:22px; height:22px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--orange); animation:feed-spin 0.7s linear infinite;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <!-- Leaflet (carte réelle OpenStreetMap) : CSS inlinée depuis la lib officielle, JS via CDN -->
@@ -1076,6 +1084,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
   </div>
 
   <div class="screen-area" id="screen-area">
+
+    <!-- Tire-vers-le-bas pour rafraîchir (voir le script tout en bas) : la
+         position/opacité sont pilotées en JS pendant le geste, la rotation
+         du petit cercle tourne en continu en CSS (invisible tant que ce
+         bloc est à opacité 0). -->
+    <div class="pull-refresh" id="pull-refresh-indicator"><div class="pull-refresh-spinner"></div></div>
 
     <!-- ACCUEIL -->
     <section class="screen active" id="screen-accueil">
@@ -5093,6 +5107,70 @@ document.addEventListener('visibilitychange', () => {
     loadNotifications();
   }
 });
+
+/* ---- Tire-vers-le-bas pour rafraîchir ----
+   Recharge les données de l'écran actuellement affiché, en plus du fil et
+   des notifications (toujours utile, visibles depuis n'importe quel écran
+   via la cloche). Chaque chargement attrape sa propre erreur : un souci sur
+   l'un ne doit pas empêcher les autres ni laisser le geste "coincé". */
+async function refreshCurrentScreen(){
+  if(!sb || !currentUserId) return;
+  const active = document.querySelector('.screen.active');
+  const name = active ? active.id.replace('screen-', '') : 'accueil';
+  const tasks = [loadRemotePosts(), loadNotifications()];
+  if(name==='meteo') tasks.push(loadRemoteWxReports());
+  if(name==='randonnee'){ tasks.push(loadRemoteHikeReports()); tasks.push(loadRemoteTrails()); }
+  if(name==='profil') tasks.push(loadFollowersList().then(renderProfile));
+  if(name==='admin') tasks.push(loadAdminPublications().then(renderAdmin));
+  await Promise.all(tasks.map(p => p.catch(()=>{})));
+}
+(function(){
+  const area = document.getElementById('screen-area');
+  const indicator = document.getElementById('pull-refresh-indicator');
+  if(!area || !indicator) return;
+  const THRESHOLD = 64; // px de tirage nécessaire pour déclencher le rafraîchissement
+  let startY = null, pulling = false, refreshing = false;
+  area.addEventListener('touchstart', (e) => {
+    if(refreshing){ startY = null; return; }
+    // Ne démarre le geste que si on est déjà tout en haut du contenu —
+    // sinon ce serait juste un défilement normal vers le bas de la liste.
+    if(area.scrollTop > 0){ startY = null; return; }
+    startY = e.touches[0].clientY;
+    pulling = false;
+    indicator.style.transition = 'none';
+  }, {passive:true});
+  area.addEventListener('touchmove', (e) => {
+    if(startY==null || refreshing) return;
+    const dy = e.touches[0].clientY - startY;
+    if(dy <= 0) return;
+    pulling = true;
+    // Tirage amorti (×0.5) façon "élastique", plafonné pour ne pas pousser
+    // l'indicateur hors de l'écran si le doigt continue de glisser.
+    const dist = Math.min(dy * 0.5, THRESHOLD * 1.4);
+    indicator.style.transform = 'translate(-50%, ' + dist + 'px)';
+    indicator.style.opacity = Math.min(dist / THRESHOLD, 1);
+  }, {passive:true});
+  area.addEventListener('touchend', () => {
+    if(!pulling || refreshing){ startY = null; pulling = false; return; }
+    const m = /translate\(-50%, ([\d.]+)px\)/.exec(indicator.style.transform);
+    const dist = m ? parseFloat(m[1]) : 0;
+    startY = null; pulling = false;
+    indicator.style.transition = 'transform .25s ease, opacity .25s ease';
+    if(dist >= THRESHOLD){
+      refreshing = true;
+      indicator.style.transform = 'translate(-50%, ' + THRESHOLD + 'px)';
+      indicator.style.opacity = '1';
+      refreshCurrentScreen().finally(() => {
+        refreshing = false;
+        indicator.style.transform = 'translate(-50%, 0px)';
+        indicator.style.opacity = '0';
+      });
+    } else {
+      indicator.style.transform = 'translate(-50%, 0px)';
+      indicator.style.opacity = '0';
+    }
+  });
+})();
 </script>
 </body>
 </html>
