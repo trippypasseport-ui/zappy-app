@@ -183,7 +183,7 @@
   .sub-head{display:flex; align-items:center; gap:12px; padding:16px 18px 6px;}
   .sub-head .sub-title{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:16px; color:var(--ink);}
   .profile-hero{display:flex; flex-direction:column; align-items:center; gap:10px; padding:22px 18px 18px;}
-  .profile-avatar{width:74px; height:74px; border-radius:50%; background:linear-gradient(135deg,var(--orange),var(--sky)); display:flex; align-items:center; justify-content:center; color:#fff; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:26px;}
+  .profile-avatar{width:74px; height:74px; border-radius:50%; background:linear-gradient(135deg,var(--orange),var(--sky)); display:flex; align-items:center; justify-content:center; color:#fff; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:26px; overflow:hidden;}
   .profile-name{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:17px; color:var(--ink);}
   .profile-sub{font-size:12px; color:var(--muted);}
   .stat-row{display:flex; gap:10px; padding:0 18px 18px;}
@@ -2126,6 +2126,7 @@ async function loadRemotePosts(){
     return {
       id: row.id, remote:true, authorId: row.author_id, createdAt: row.created_at,
       name: row.author_name || 'Testeur Zapy', initial: (row.author_name||'T')[0].toUpperCase(),
+      avatarUrl: row.author_avatar_url || null,
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
       photos: (row.photos && row.photos.length) ? row.photos : null, audio:null,
@@ -2251,7 +2252,7 @@ function renderPosts(){
     <div class="post-card ${p.cat==='trafic' && p.cleared ? 'cleared' : ''}" onclick="openComments('${p.id}')" style="cursor:pointer;">
       <div class="post-main">
         <div class="post-top">
-          <div class="avatar" style="background:${p.color}; ${p.authorId?'cursor:pointer;':''}" onclick="event.stopPropagation(); openUserProfileFromPost('${p.id}')">${p.initial}</div>
+          <div class="avatar" style="background:${p.color}; ${p.authorId?'cursor:pointer;':''} ${p.avatarUrl?'overflow:hidden; padding:0;':''}" onclick="event.stopPropagation(); openUserProfileFromPost('${p.id}')">${p.avatarUrl ? `<img src="${p.avatarUrl}" style="width:100%; height:100%; object-fit:cover; display:block;">` : p.initial}</div>
           <div>
             <div class="post-name" style="${p.authorId?'cursor:pointer;':''}" onclick="event.stopPropagation(); openUserProfileFromPost('${p.id}')">${p.name} ${p.verified? '<svg width="12" height="12" viewBox="0 0 24 24" fill="#4FC3F7"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}</div>
             <div class="post-meta">${p.time} · ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? `<div class="duration-badge">⏱ Durée estimée ${DURATION_HINTS[p.urgency] || ''}</div>` : ''}</div>
@@ -2942,6 +2943,7 @@ async function actuallyPublish(){
       const insertPayload = {
         author_id: currentUserId,
         author_name: myPseudo,
+        author_avatar_url: myAvatarUrl || null,
         category_id: selectedCat,
         title: title,
         description: desc || null,
@@ -3631,16 +3633,19 @@ let viewedProfileAuthorId = null;
 function openUserProfileFromPost(id){
   const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(id));
   if(!p) return;
-  openUserProfile(p.authorId, p.name);
+  openUserProfile(p.authorId, p.name, p.avatarUrl);
 }
-function openUserProfile(authorId, authorName){
+function openUserProfile(authorId, authorName, authorAvatarUrl){
   // Une publication locale (jamais partagée via Supabase) n'a pas d'auteur
   // identifié : pas de profil consultable dans ce cas.
   if(!authorId) return;
   const activeEl = document.querySelector('.screen.active');
   userProfileReturnScreen = activeEl ? activeEl.id.replace('screen-','') : 'accueil';
   viewedProfileAuthorId = authorId;
-  document.getElementById('up-avatar').textContent = (authorName||'?')[0].toUpperCase();
+  const upAvatarEl = document.getElementById('up-avatar');
+  upAvatarEl.innerHTML = authorAvatarUrl
+    ? `<img src="${authorAvatarUrl}" style="width:100%; height:100%; object-fit:cover; display:block;">`
+    : (authorName||'?')[0].toUpperCase();
   document.getElementById('up-name').textContent = authorName || 'Membre Zapy';
   const {rank, score, total} = getUserRanking(authorId);
   document.getElementById('up-rank').textContent = rank!=null
