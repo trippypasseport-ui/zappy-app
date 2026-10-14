@@ -2349,10 +2349,15 @@ async function loadRemotePosts(){
     // de basculer sur "Rien pour l'instant", qui donnerait l'impression
     // trompeuse que les publications ont disparu. On réessaie une fois,
     // automatiquement, 3s plus tard.
-    console.warn('Erreur chargement publications, nouvelle tentative dans 3s', error);
+    console.warn('Erreur chargement publications, nouvelle tentative dans 3-5s', error);
     feedLoading = false;
     if(remotePosts.length===0 && posts.length===0) renderPosts();
-    setTimeout(() => { loadRemotePosts(); }, 3000);
+    // Délai aléatoire (pas une valeur fixe) : avec plusieurs appareils en
+    // échec EN MÊME TEMPS (ex. serveur surchargé par plusieurs testeurs à
+    // la fois), un délai fixe les aurait fait tous réessayer au même
+    // instant, rechargeant encore le serveur juste après — le petit
+    // aléatoire étale les nouvelles tentatives dans le temps.
+    setTimeout(() => { loadRemotePosts(); }, 3000 + Math.random()*2000);
     return;
   }
   // L'extrait audio vit dans sa propre table (publication_audio), jamais
