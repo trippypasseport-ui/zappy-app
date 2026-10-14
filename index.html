@@ -3359,19 +3359,28 @@ function renderWxReports(){
 }
 
 /* ---- Randonnée ---- */
+// exactLat/exactLng = coordonnées approximatives du point de départ (parking
+// ou tête de sentier), pour le bouton "itinéraire" (voir navLinksHtml, déjà
+// utilisé pour les publications) affiché dans trailInfo().
 const TRAILS = [
   {name:'Montagne Pelée', place:'Le Prêcheur / Grand-Rivière', difficulty:'Difficile', duration:'4h30 (A/R)', distance:'10,5 km', icon:'🌋',
-   desc:"L'ascension du volcan emblématique de la Martinique, 1397 m. Vue à 360° sur l'île par temps clair. Prévoir de bonnes chaussures et partir tôt le matin."},
+   desc:"L'ascension du volcan emblématique de la Martinique, 1397 m. Vue à 360° sur l'île par temps clair. Prévoir de bonnes chaussures et partir tôt le matin.",
+   exactLat:14.7868, exactLng:-61.1534},
   {name:'Les Pitons du Carbet', place:'Le Carbet / Fort-de-France', difficulty:'Difficile', duration:'6h (A/R)', distance:'9 km', icon:'⛰️',
-   desc:'Randonnée sportive à travers la forêt tropicale humide, avec cordes et échelles sur certains passages. Réservée aux randonneurs expérimentés.'},
+   desc:'Randonnée sportive à travers la forêt tropicale humide, avec cordes et échelles sur certains passages. Réservée aux randonneurs expérimentés.',
+   exactLat:14.6514, exactLng:-61.0611},
   {name:'Canal de Beauregard', place:'Fort-de-France / Balata', difficulty:'Facile', duration:'2h (A/R)', distance:'5 km', icon:'🌿',
-   desc:"Marche le long d'un ancien canal d'irrigation, à flanc de falaise avec vue sur la vallée. Accessible en famille."},
+   desc:"Marche le long d'un ancien canal d'irrigation, à flanc de falaise avec vue sur la vallée. Accessible en famille.",
+   exactLat:14.6269, exactLng:-61.0559},
   {name:'Presqu’île de la Caravelle', place:'La Trinité', difficulty:'Modérée', duration:'3h (boucle)', distance:'7,8 km', icon:'🏖️',
-   desc:"Boucle côtière entre mangrove, savane et ruines du château Dubuc, avec vue sur l'Atlantique."},
+   desc:"Boucle côtière entre mangrove, savane et ruines du château Dubuc, avec vue sur l'Atlantique.",
+   exactLat:14.7726, exactLng:-60.9105},
   {name:'Anses d’Arlet — sentier côtier', place:"Les Anses-d'Arlet", difficulty:'Facile', duration:'1h30 (A/R)', distance:'4 km', icon:'🌴',
-   desc:'Balade facile entre plages et criques, idéale en fin de journée pour profiter du coucher de soleil.'},
+   desc:'Balade facile entre plages et criques, idéale en fin de journée pour profiter du coucher de soleil.',
+   exactLat:14.4935, exactLng:-61.0760},
   {name:'Rocher du Diamant — point de vue', place:'Le Diamant', difficulty:'Modérée', duration:'1h (A/R)', distance:'3 km', icon:'📍',
-   desc:'Montée vers un point de vue panoramique sur le rocher du Diamant et la côte sud.'},
+   desc:'Montée vers un point de vue panoramique sur le rocher du Diamant et la côte sud.',
+   exactLat:14.4739, exactLng:-61.0196},
 ];
 /* Sentiers ajoutés par la communauté (table Supabase trails), en plus des
    sentiers éditoriaux fixes ci-dessus — mêmes champs affichés, icône
@@ -3546,12 +3555,31 @@ function renderHikeReports(){
     </div>`).join('');
 }
 
+// Les lieux éditoriaux combinent parfois deux communes ("Le Carbet / Fort-
+// de-France") : on tente normalizeCommune() sur le texte entier, puis sur
+// chaque morceau séparé par "/", pour retomber sur une coordonnée connue.
+function resolvePlaceCoords(placeText){
+  const whole = COMMUNE_COORDS[normalizeCommune(placeText)];
+  if(whole) return whole;
+  for(const part of (placeText||'').split('/')){
+    const c = COMMUNE_COORDS[normalizeCommune(part)];
+    if(c) return c;
+  }
+  return null;
+}
 function trailInfo(i){
   const t = displayedTrails[i];
   document.getElementById('comments-title').textContent = t.icon + ' ' + t.name;
+  let navLat = t.exactLat != null ? t.exactLat : null;
+  let navLng = t.exactLng != null ? t.exactLng : null;
+  if(navLat == null || navLng == null){
+    const navCoord = resolvePlaceCoords(t.place);
+    if(navCoord){ navLat = navCoord.lat; navLng = navCoord.lng; }
+  }
   document.getElementById('comments-list').innerHTML = `
     <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">📍 ${t.place} · ⏱ ${t.duration} · 📏 ${t.distance}</div>
-    <div style="font-size:13px; color:var(--ink); line-height:1.4;">${t.desc}</div>
+    <div style="font-size:13px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${t.desc}</div>
+    ${navLinksHtml(navLat, navLng)}
   `;
   document.getElementById('comment-form').style.display = 'none';
   document.getElementById('comments-overlay').classList.add('show');
