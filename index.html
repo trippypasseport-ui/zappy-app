@@ -1210,6 +1210,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="stat-box"><div class="stat-num" id="stat-pubs">0</div><div class="stat-label">Publications</div></div>
         <div class="stat-box" onclick="openFollowList('abonnements')" style="cursor:pointer;"><div class="stat-num" id="stat-following">0</div><div class="stat-label">Abonnements</div></div>
         <div class="stat-box" onclick="openFollowList('abonnes')" style="cursor:pointer;"><div class="stat-num" id="stat-followers">0</div><div class="stat-label">Abonnés</div></div>
+        <div class="stat-box"><div class="stat-num" id="stat-favs">0</div><div class="stat-label">Favoris</div></div>
       </div>
 
       <div class="section-tag">Classement des membres actifs</div>
@@ -2243,6 +2244,7 @@ async function initBackend(){
     await loadMyFollows();
     await loadFollowersList();
     await loadMySocialLink();
+    await loadMyFavorites();
     await loadRemotePosts();
     await loadMyPlan();
     initDevicePush();
@@ -2384,6 +2386,7 @@ let suggestions = [
   {id:'s2', name:'Marché de Fort-de-France', meta:'4,1 km', photo:'./assets/sugg_marche.png', fav:false},
   {id:'s3', name:'Festival des saveurs', meta:"Aujourd'hui · 18h", photo:'./assets/sugg_festival.png', fav:false},
 ];
+let myFavorites = new Set();  // ids des suggestions mises en favori par CET utilisateur (voir loadMyFavorites/toggleFav)
 
 function heartIcon(filled){
   return filled
@@ -2808,7 +2811,33 @@ function renderSuggestions(filterText){
       </div>
     </div>`).join('');
 }
-function toggleFav(id){ const s = suggestions.find(x=>x.id===id); s.fav = !s.fav; renderSuggestions(document.getElementById('search-input').value); }
+/* Favoris (suggestions à proximité) — persistés par utilisateur dans
+   user_favorites, voir loadMyFavorites()/initBackend(). */
+async function toggleFav(id){
+  const s = suggestions.find(x=>x.id===id);
+  if(!s) return;
+  s.fav = !s.fav;
+  if(s.fav) myFavorites.add(id); else myFavorites.delete(id);
+  renderSuggestions(document.getElementById('search-input').value);
+  renderProfile();
+  if(!sb || !currentUserId) return;
+  if(s.fav){
+    const { error } = await sb.from('user_favorites').insert({ user_id: currentUserId, suggestion_id: id });
+    if(error && error.code !== '23505'){ console.warn('Erreur ajout favori', error); s.fav = false; myFavorites.delete(id); renderSuggestions(document.getElementById('search-input').value); renderProfile(); }
+  } else {
+    const { error } = await sb.from('user_favorites').delete().eq('user_id', currentUserId).eq('suggestion_id', id);
+    if(error){ console.warn('Erreur retrait favori', error); s.fav = true; myFavorites.add(id); renderSuggestions(document.getElementById('search-input').value); renderProfile(); }
+  }
+}
+async function loadMyFavorites(){
+  myFavorites = new Set();
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('user_favorites').select('suggestion_id').eq('user_id', currentUserId);
+  if(error){ console.warn('Erreur chargement favoris', error); return; }
+  myFavorites = new Set((data||[]).map(r => r.suggestion_id));
+  suggestions.forEach(s => { s.fav = myFavorites.has(s.id); });
+  renderSuggestions(document.getElementById('search-input') ? document.getElementById('search-input').value : '');
+}
 function filterSuggestions(v){ renderSuggestions(v); }
 
 let selectedCat = 'trafic';
@@ -3845,6 +3874,7 @@ function renderProfile(){
   document.getElementById('stat-pubs').textContent = mine.length;
   document.getElementById('stat-following').textContent = myFollows.size;
   document.getElementById('stat-followers').textContent = followersCount;
+  document.getElementById('stat-favs').textContent = myFavorites.size;
   const rankLine = document.getElementById('my-rank-line');
   const badge = document.getElementById('my-rank-badge');
   if(rankLine && currentUserId){
