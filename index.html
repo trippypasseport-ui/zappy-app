@@ -2368,6 +2368,49 @@ async function loadRemotePosts(){
   if(openPostId!=null) renderComments();
   renderMapMarkers();
   updateBellDot();
+  saveCachedPostsToLocalStorage();
+}
+
+/* Démarrage instantané du fil, façon Facebook/Instagram : ces deux
+   fonctions gardent une copie allégée des dernières publications vues dans
+   localStorage (par appareil), pour les afficher IMMÉDIATEMENT à l'ouverture
+   de l'app — avant même que la connexion réseau à Supabase ne soit établie
+   — pendant que loadRemotePosts() récupère la vraie version fraîche en
+   arrière-plan et la remplace dès qu'elle arrive. Sans ça, l'app reste sur
+   un écran quasi vide (juste les publications de démo) le temps du premier
+   aller-retour réseau, ce qui donne une impression de lenteur même quand le
+   serveur répond vite. On ne garde que les champs utiles à l'affichage du
+   fil (pas les commentaires/likers détaillés, pas le catalogue photo ni
+   l'audio) et seulement les publications les plus récentes, pour que ça
+   tienne large dans le quota de localStorage même avec des photos. */
+const CACHED_POSTS_KEY = 'zapy_cached_posts_v1';
+const CACHED_POSTS_MAX = 12;
+function saveCachedPostsToLocalStorage(){
+  try{
+    const trimmed = remotePosts.slice(0, CACHED_POSTS_MAX).map(p => ({
+      id:p.id, remote:true, authorId:p.authorId, createdAt:p.createdAt,
+      name:p.name, initial:p.initial, avatarUrl:p.avatarUrl, color:p.color,
+      verified:false, time:p.time, place:p.place, title:p.title, text:p.text,
+      photo:p.photo, photos:null, audio:null, hasAudio:p.hasAudio,
+      exactLat:p.exactLat, exactLng:p.exactLng,
+      likes:p.likes, commentCount:p.commentCount, liked:p.liked, cat:p.cat,
+      urgency:p.urgency, cleared:p.cleared, clearConfirms:p.clearConfirms,
+      sponsored:p.sponsored, likers:[], comments:[]
+    }));
+    localStorage.setItem(CACHED_POSTS_KEY, JSON.stringify(trimmed));
+  }catch(e){ /* quota dépassé ou stockage bloqué (navigation privée...) : tant pis, pas bloquant */ }
+}
+function renderCachedPostsInstantly(){
+  try{
+    const raw = localStorage.getItem(CACHED_POSTS_KEY);
+    if(!raw) return;
+    const cached = JSON.parse(raw);
+    if(Array.isArray(cached) && cached.length){
+      remotePosts = cached;
+      renderPosts();
+      renderMapMarkers();
+    }
+  }catch(e){ /* cache corrompu ou illisible : on ignore, le chargement réseau normal prend le relais */ }
 }
 
 function timeAgo(iso){
@@ -4922,6 +4965,7 @@ loadPlanTierPrices().then(renderPricingList);
 renderPricingList();
 renderCatRow();
 renderPosts();
+renderCachedPostsInstantly(); // affiche tout de suite les dernières publications vues (voir plus haut), avant même la connexion réseau
 renderSuggestions();
 renderCatGrid();
 renderUrgency();
