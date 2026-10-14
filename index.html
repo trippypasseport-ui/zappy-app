@@ -2274,35 +2274,29 @@ async function initBackend(){
       safe(loadRemoteHikeReports(), 'randonnées'),
       safe(loadRemoteTrails(), 'sentiers'),
     ]);
-    sb.channel('public:notifications')
+    handleCheckoutRedirect();
+    // Un seul canal temps réel partagé pour toutes les tables écoutées, au
+    // lieu d'un canal séparé par table (9 avant) : chaque canal a un coût
+    // côté serveur Supabase (une entrée de réplication par canal, par
+    // appareil connecté), et avec plusieurs testeurs qui gardent l'app
+    // ouverte longtemps, ça finissait par saturer la base (voir l'incident
+    // du 14/10 — tout le monde se faisait répondre des erreurs 500/504
+    // même sur des requêtes triviales). Regrouper sur un seul canal réduit
+    // ce coût d'un facteur ~9 sans rien changer au comportement pour
+    // l'utilisateur : chaque table garde son propre .on(), juste sur le
+    // même canal plutôt que sur neuf canaux distincts.
+    sb.channel('public:zapy-realtime')
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+currentUserId}, (payload) => {
         loadNotifications();
         showDeviceNotification(payload.new);
       })
-      .subscribe();
-    sb.channel('public:merchant_subscriptions')
       .on('postgres_changes', {event:'*', schema:'public', table:'merchant_subscriptions', filter:'user_id=eq.'+currentUserId}, () => { loadMyPlan(); })
-      .subscribe();
-    handleCheckoutRedirect();
-    sb.channel('public:publications')
       .on('postgres_changes', {event:'*', schema:'public', table:'publications'}, () => { loadRemotePosts(); })
-      .subscribe();
-    sb.channel('public:confirmations')
       .on('postgres_changes', {event:'*', schema:'public', table:'confirmations'}, () => { loadRemotePosts(); })
-      .subscribe();
-    sb.channel('public:likes')
       .on('postgres_changes', {event:'*', schema:'public', table:'likes'}, () => { loadRemotePosts(); })
-      .subscribe();
-    sb.channel('public:comments')
       .on('postgres_changes', {event:'*', schema:'public', table:'comments'}, () => { loadRemotePosts(); })
-      .subscribe();
-    sb.channel('public:weather_reports')
       .on('postgres_changes', {event:'*', schema:'public', table:'weather_reports'}, () => { loadRemoteWxReports(); })
-      .subscribe();
-    sb.channel('public:hike_reports')
       .on('postgres_changes', {event:'*', schema:'public', table:'hike_reports'}, () => { loadRemoteHikeReports(); })
-      .subscribe();
-    sb.channel('public:trails')
       .on('postgres_changes', {event:'*', schema:'public', table:'trails'}, () => { loadRemoteTrails(); })
       .subscribe();
   }catch(e){ console.warn('Backend partagé indisponible, mode local uniquement', e); }
