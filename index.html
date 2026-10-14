@@ -1279,7 +1279,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="profile-name" id="up-name">—</div>
         <div class="profile-sub" id="up-rank">—</div>
       </div>
-      <div style="padding:4px 18px 20px;">
+      <div style="padding:4px 18px 0;">
+        <button type="button" class="submit-btn" id="up-follow-btn" style="display:none; background:var(--orange); color:#fff;">+ Suivre</button>
+        <a href="#" target="_blank" rel="noopener" id="up-social-link" style="display:none; align-items:center; justify-content:center; gap:6px; margin-top:8px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">🔗 Voir son lien</a>
+      </div>
+      <div style="padding:14px 18px 20px;">
         <button type="button" class="submit-btn" id="up-report-btn" style="display:none; background:#FFEBEE; color:#D32F2F;" onclick="openReportModal('user')">🚩 Signaler ce membre</button>
         <div style="font-size:11.5px; color:#78909C; margin-top:8px;">Réservé aux membres les plus actifs (classement), pour limiter les signalements abusifs.</div>
       </div>
@@ -1322,6 +1326,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
       <div style="padding:14px 18px 0;">
         <button type="button" class="submit-btn" onclick="showScreen('publier'); selectFormCat('artiste');">+ Publier une création</button>
+      </div>
+      <div class="section-tag">Votre lien à partager</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Instagram, Spotify, SoundCloud… affiché sur votre profil public, pour que les autres membres puissent vous suivre en dehors de Zapy.</div>
+        <input type="url" id="social-link-input" placeholder="https://instagram.com/votre-pseudo" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:8px;">
+        <button type="button" class="submit-btn" onclick="saveSocialLink()">Enregistrer le lien</button>
       </div>
       <div class="section-tag">Vos publications</div>
       <div class="art-grid">
@@ -1788,6 +1798,8 @@ let myMemberSince = null;
 let amIAdmin = false;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
 let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
+let myFollows = new Set();  // ids des membres/artistes que CET utilisateur suit (voir toggleFollow)
+let mySocialLink = null;    // lien externe (Instagram, Spotify...) de CET utilisateur (voir profile_links)
 
 /* ---- Pastille de notification (cloche) ----
    N'apparaît que s'il existe une publication (d'un autre membre) postée
@@ -2079,6 +2091,10 @@ async function initBackend(){
     const { data: myProfileRow } = await sb.from('profiles').select('avatar_url, created_at').eq('id', currentUserId).maybeSingle();
     myAvatarUrl = (myProfileRow && myProfileRow.avatar_url) || null;
     myMemberSince = (myProfileRow && myProfileRow.created_at) || null;
+    // Chargé avant loadRemotePosts() : le fil doit pouvoir mettre en avant
+    // les publications des artistes/membres suivis dès le premier rendu.
+    await loadMyFollows();
+    await loadMySocialLink();
     await loadRemotePosts();
     await loadMyPlan();
     sb.channel('public:merchant_subscriptions')
@@ -2151,6 +2167,11 @@ async function loadRemotePosts(){
       comments: commentRows.map(c => ({authorId: c.author_id, author: c.author_name || 'Testeur Zapy', avatarUrl: c.author_avatar_url || null, text: c.text}))
     };
   });
+  // Les publications des membres/artistes suivis (voir toggleFollow)
+  // remontent en priorité dans le fil — tri stable, donc l'ordre
+  // chronologique est conservé à l'intérieur de chaque groupe (suivi / non
+  // suivi), puisque la requête est déjà triée par date décroissante.
+  remotePosts.sort((a, b) => (myFollows.has(b.authorId)?1:0) - (myFollows.has(a.authorId)?1:0));
   renderPosts();
   if(openPostId!=null) renderComments();
   renderMapMarkers();
@@ -3058,6 +3079,10 @@ function showScreen(name){
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','admin-lock','notifications'].includes(name))));
   document.getElementById('screen-area').scrollTop = 0;
   if(name==='profil') renderProfile();
+  if(name==='artiste'){
+    const linkInput = document.getElementById('social-link-input');
+    if(linkInput) linkInput.value = mySocialLink || '';
+  }
   if(name==='admin') renderAdmin();
   if(name==='notifications') renderNotifPrefs();
   if(name==='publier') initLocationUI();
@@ -3753,6 +3778,33 @@ function openUserProfile(authorId, authorName, authorAvatarUrl){
     : 'Pas encore classé';
   const isMe = authorId === currentUserId;
   document.getElementById('up-report-btn').style.display = (!isMe && isActiveMember(currentUserId)) ? 'block' : 'none';
+  const followBtn = document.getElementById('up-follow-btn');
+  if(followBtn){
+    if(isMe || !currentUserId){
+      followBtn.style.display = 'none';
+    } else {
+      followBtn.style.display = 'block';
+      const already = myFollows.has(authorId);
+      followBtn.textContent = already ? '✓ Suivi' : '+ Suivre';
+      followBtn.style.background = already ? 'var(--surface)' : 'var(--orange)';
+      followBtn.style.color = already ? 'var(--ink)' : '#fff';
+      followBtn.onclick = () => toggleFollow(authorId, authorName, authorAvatarUrl);
+    }
+  }
+  // Lien externe public (Instagram, Spotify...), voir Espace artiste /
+  // profile_links — table à part de profiles, lisible par tous (RLS).
+  const linkEl = document.getElementById('up-social-link');
+  if(linkEl){
+    linkEl.style.display = 'none';
+    if(sb){
+      sb.from('profile_links').select('social_link').eq('user_id', authorId).maybeSingle().then(({data}) => {
+        if(data && data.social_link && viewedProfileAuthorId === authorId){
+          linkEl.href = data.social_link;
+          linkEl.style.display = 'flex';
+        }
+      });
+    }
+  }
   renderUserRecentShares(authorId);
   showScreen('user-profile');
 }
@@ -3926,6 +3978,51 @@ async function loadMyPlan(){
   const { data, error } = await sb.from('merchant_subscriptions').select('plan_id, status').eq('user_id', currentUserId).maybeSingle();
   if(!error && data && data.status === 'active') myPlan = data.plan_id;
   renderPricingList();
+}
+
+/* ---- Suivre un artiste/membre (voir aussi le tri des publications dans
+   loadRemotePosts) et lien externe public (Espace artiste) ---- */
+async function loadMyFollows(){
+  myFollows = new Set();
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('follows').select('followed_id').eq('follower_id', currentUserId);
+  if(error){ console.warn('Erreur chargement abonnements', error); return; }
+  myFollows = new Set((data||[]).map(r => r.followed_id));
+}
+async function loadMySocialLink(){
+  mySocialLink = null;
+  if(!sb || !currentUserId) return;
+  const { data } = await sb.from('profile_links').select('social_link').eq('user_id', currentUserId).maybeSingle();
+  mySocialLink = (data && data.social_link) || null;
+}
+async function saveSocialLink(){
+  const input = document.getElementById('social-link-input');
+  const value = input.value.trim();
+  if(value && !/^https?:\/\//i.test(value)){ toast('Le lien doit commencer par http:// ou https://'); return; }
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const { error } = await sb.from('profile_links').upsert({ user_id: currentUserId, social_link: value || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+  if(error){ console.warn('Erreur enregistrement du lien', error); toast('Erreur, réessaie'); return; }
+  mySocialLink = value || null;
+  toast(value ? 'Lien enregistré' : 'Lien supprimé');
+}
+// followedName/followedAvatarUrl dénormalisés sur follows à l'insertion —
+// voir openUserProfile(), seul appelant, qui connaît déjà ces valeurs
+// (profiles n'est pas lisible pour un autre membre).
+async function toggleFollow(authorId, authorName, authorAvatarUrl){
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const btn = document.getElementById('up-follow-btn');
+  if(myFollows.has(authorId)){
+    myFollows.delete(authorId);
+    if(btn){ btn.textContent = '+ Suivre'; btn.style.background = 'var(--orange)'; btn.style.color = '#fff'; }
+    const { error } = await sb.from('follows').delete().eq('follower_id', currentUserId).eq('followed_id', authorId);
+    if(error){ console.warn('Erreur désabonnement', error); myFollows.add(authorId); return; }
+  } else {
+    myFollows.add(authorId);
+    if(btn){ btn.textContent = '✓ Suivi'; btn.style.background = 'var(--surface)'; btn.style.color = 'var(--ink)'; }
+    const { error } = await sb.from('follows').insert({ follower_id: currentUserId, followed_id: authorId, followed_name: authorName, followed_avatar_url: authorAvatarUrl });
+    if(error){ console.warn('Erreur abonnement', error); myFollows.delete(authorId); return; }
+  }
+  await loadRemotePosts();
 }
 /* Au retour de la page de paiement Stripe, affiche un message et nettoie
    l'URL (sans recharger). Le vrai statut arrive via loadMyPlan() /
