@@ -1208,8 +1208,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
       <div class="stat-row">
         <div class="stat-box"><div class="stat-num" id="stat-pubs">0</div><div class="stat-label">Publications</div></div>
-        <div class="stat-box"><div class="stat-num" id="stat-confirms">0</div><div class="stat-label">Confirmations</div></div>
-        <div class="stat-box"><div class="stat-num" id="stat-favs">0</div><div class="stat-label">Favoris</div></div>
+        <div class="stat-box" onclick="openFollowList('abonnements')" style="cursor:pointer;"><div class="stat-num" id="stat-following">0</div><div class="stat-label">Abonnements</div></div>
+        <div class="stat-box" onclick="openFollowList('abonnes')" style="cursor:pointer;"><div class="stat-num" id="stat-followers">0</div><div class="stat-label">Abonnés</div></div>
       </div>
 
       <div class="section-tag">Classement des membres actifs</div>
@@ -1476,6 +1476,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
           </div>
         </div>
       </div>
+    </section>
+
+    <!-- ABONNEMENTS / ABONNÉS -->
+    <section class="screen" id="screen-follow-list">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Abonnements</div>
+      </div>
+      <div style="display:flex; gap:8px; padding:6px 18px 10px;">
+        <div class="notif-tab active" id="fl-tab-abonnements" onclick="switchFollowListTab('abonnements')">Abonnements</div>
+        <div class="notif-tab" id="fl-tab-abonnes" onclick="switchFollowListTab('abonnes')">Abonnés</div>
+      </div>
+      <div class="menu-list" id="follow-list-content" style="padding-bottom:20px;"></div>
     </section>
 
     <!-- AIDE & SUPPORT -->
@@ -1864,6 +1877,9 @@ let amIAdmin = false;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
 let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
 let myFollows = new Set();  // ids des membres/artistes que CET utilisateur suit (voir toggleFollow)
+let followersCount = 0;     // nb de membres qui suivent CET utilisateur (voir loadFollowersCount)
+let followingList = [];     // liste détaillée (nom+photo) des membres suivis — écran "Abonnements"
+let followersList = [];     // liste détaillée (nom+photo) des abonnés — écran "Abonnés"
 let mySocialLink = null;    // lien externe (Instagram, Spotify...) de CET utilisateur (voir profile_links)
 
 /* ---- Notifications (commentaire/j'aime reçu, nouvel abonné) ----
@@ -2225,6 +2241,7 @@ async function initBackend(){
     // Chargé avant loadRemotePosts() : le fil doit pouvoir mettre en avant
     // les publications des artistes/membres suivis dès le premier rendu.
     await loadMyFollows();
+    await loadFollowersList();
     await loadMySocialLink();
     await loadRemotePosts();
     await loadMyPlan();
@@ -3215,9 +3232,9 @@ function showScreen(name){
   closePhotoViewer();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','admin-lock','notifications'].includes(name))));
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','admin-lock','notifications','follow-list'].includes(name))));
   document.getElementById('screen-area').scrollTop = 0;
-  if(name==='profil') renderProfile();
+  if(name==='profil'){ renderProfile(); loadFollowersList().then(renderProfile); }
   if(name==='artiste'){
     const linkInput = document.getElementById('social-link-input');
     if(linkInput) linkInput.value = mySocialLink || '';
@@ -3826,8 +3843,8 @@ function renderProfile(){
   // bloqué à 0 pour tout le monde dès qu'on publiait pour de vrai.
   const mine = [...remotePosts, ...posts].filter(p => (p.authorId && p.authorId === currentUserId) || p.name === 'Toi');
   document.getElementById('stat-pubs').textContent = mine.length;
-  document.getElementById('stat-confirms').textContent = mine.reduce((s,p)=>s+p.likes,0);
-  document.getElementById('stat-favs').textContent = suggestions.filter(s=>s.fav).length;
+  document.getElementById('stat-following').textContent = myFollows.size;
+  document.getElementById('stat-followers').textContent = followersCount;
   const rankLine = document.getElementById('my-rank-line');
   const badge = document.getElementById('my-rank-badge');
   if(rankLine && currentUserId){
@@ -4151,10 +4168,55 @@ async function loadMyPlan(){
    loadRemotePosts) et lien externe public (Espace artiste) ---- */
 async function loadMyFollows(){
   myFollows = new Set();
+  followingList = [];
   if(!sb || !currentUserId) return;
-  const { data, error } = await sb.from('follows').select('followed_id').eq('follower_id', currentUserId);
+  const { data, error } = await sb.from('follows').select('followed_id, followed_name, followed_avatar_url').eq('follower_id', currentUserId);
   if(error){ console.warn('Erreur chargement abonnements', error); return; }
   myFollows = new Set((data||[]).map(r => r.followed_id));
+  followingList = (data||[]).map(r => ({ id: r.followed_id, name: r.followed_name || 'Membre Zapy', avatarUrl: r.followed_avatar_url || null }));
+}
+async function loadFollowersList(){
+  followersList = [];
+  followersCount = 0;
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('follows').select('follower_id, follower_name, follower_avatar_url').eq('followed_id', currentUserId);
+  if(error){ console.warn('Erreur chargement abonnés', error); return; }
+  followersList = (data||[]).map(r => ({ id: r.follower_id, name: r.follower_name || 'Membre Zapy', avatarUrl: r.follower_avatar_url || null }));
+  followersCount = followersList.length;
+}
+/* Écran "Abonnements"/"Abonnés" — mêmes deux listes que le compteur du
+   profil, affichées en détail (nom + photo, clic → profil du membre). */
+async function openFollowList(tab){
+  showScreen('follow-list');
+  switchFollowListTab(tab);
+  await Promise.all([loadMyFollows(), loadFollowersList()]);
+  switchFollowListTab(tab);
+  renderProfile();
+}
+function switchFollowListTab(tab){
+  document.getElementById('fl-tab-abonnements').classList.toggle('active', tab==='abonnements');
+  document.getElementById('fl-tab-abonnes').classList.toggle('active', tab==='abonnes');
+  renderFollowList(tab);
+}
+function renderFollowList(tab){
+  const el = document.getElementById('follow-list-content');
+  if(!el) return;
+  const list = tab === 'abonnements' ? followingList : followersList;
+  if(list.length === 0){
+    el.innerHTML = `<div style="text-align:center; padding:30px 10px; color:var(--muted); font-size:13px;">${tab==='abonnements' ? "Tu ne suis personne pour l'instant." : "Personne ne te suit encore."}</div>`;
+    return;
+  }
+  el.innerHTML = list.map((m, idx) => `
+    <div class="menu-row" onclick="openUserProfileFromFollowList('${tab}', ${idx})">
+      <div class="avatar" style="background:#78909C; flex-shrink:0; overflow:hidden;">${m.avatarUrl ? `<img src="${m.avatarUrl}" style="width:100%; height:100%; object-fit:cover; display:block;">` : (m.name||'?').charAt(0).toUpperCase()}</div>
+      <div style="flex:1; min-width:0; font-size:13.5px; font-weight:700; color:var(--ink);">${m.name}</div>
+    </div>`).join('');
+}
+function openUserProfileFromFollowList(tab, idx){
+  const list = tab === 'abonnements' ? followingList : followersList;
+  const m = list[idx];
+  if(!m) return;
+  openUserProfile(m.id, m.name, m.avatarUrl);
 }
 async function loadMySocialLink(){
   mySocialLink = null;
@@ -4186,10 +4248,12 @@ async function toggleFollow(authorId, authorName, authorAvatarUrl){
   } else {
     myFollows.add(authorId);
     if(btn){ btn.textContent = '✓ Suivi'; btn.style.background = 'var(--surface)'; btn.style.color = 'var(--ink)'; }
-    const { error } = await sb.from('follows').insert({ follower_id: currentUserId, followed_id: authorId, followed_name: authorName, followed_avatar_url: authorAvatarUrl });
+    const { error } = await sb.from('follows').insert({ follower_id: currentUserId, followed_id: authorId, followed_name: authorName, followed_avatar_url: authorAvatarUrl, follower_name: myPseudo, follower_avatar_url: myAvatarUrl || null });
     if(error){ console.warn('Erreur abonnement', error); myFollows.delete(authorId); return; }
   }
+  await loadMyFollows();
   await loadRemotePosts();
+  renderProfile();
 }
 /* Au retour de la page de paiement Stripe, affiche un message et nettoie
    l'URL (sans recharger). Le vrai statut arrive via loadMyPlan() /
