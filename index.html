@@ -4897,14 +4897,19 @@ async function renderAdmin(){
   await loadAdminPublications();
   const cat = id => CATEGORIES.find(c=>c.id===id);
   document.getElementById('admin-count').textContent = adminPublications.length + ' publication' + (adminPublications.length>1?'s':'') + ' (toutes, y compris expirées)';
+  // Toute la ligne est cliquable pour supprimer (demande du client : plus
+  // simple que de devoir viser précisément la petite icône poubelle). La
+  // confirmation (voir adminRemovePublication) reste la seule protection
+  // contre un clic accidentel — volontaire, pour que ça reste rapide à
+  // utiliser pour modérer en vitesse.
   document.getElementById('admin-list').innerHTML = adminPublications.map(p => `
-    <div class="admin-row">
+    <div class="admin-row" onclick="adminRemovePublication('${p.id}')" style="cursor:pointer;">
       <div class="admin-main">
         <div class="admin-title">${p.title}${p.expired ? ' <span style="color:var(--muted); font-weight:700; font-size:11px;">· expirée</span>' : ''}</div>
         <div class="admin-meta">${p.authorName} · ${cat(p.cat)? cat(p.cat).label : p.cat} · ${p.place}</div>
       </div>
       <div class="admin-actions">
-        <div class="admin-btn danger" onclick="adminRemovePublication('${p.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
+        <div class="admin-btn danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
       </div>
     </div>`).join('');
 }
