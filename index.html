@@ -2428,20 +2428,34 @@ async function loadRemotePosts(){
    tienne large dans le quota de localStorage même avec des photos. */
 const CACHED_POSTS_KEY = 'zapy_cached_posts_v1';
 const CACHED_POSTS_MAX = 12;
+// Garde la photo (et l'avatar de chaque auteur) dans le cache semblait une
+// bonne idée au départ, mais en base64 une seule photo compressée pèse déjà
+// souvent plusieurs centaines de Ko : avec 12 publications, ça dépassait
+// régulièrement le quota de localStorage (~5 Mo sur Safari iOS), et
+// localStorage.setItem() échouait alors SILENCIEUSEMENT (try/catch) — le
+// cache ne se remplissait donc jamais sur un appareil avec des photos,
+// exactement le cas signalé. On ne garde plus la photo dans le cache (les
+// cartes réapparaissent sans image une fraction de seconde, le temps que
+// loadRemotePosts() les remplace par la vraie version) ; si l'écriture
+// échoue quand même (navigation privée, quota déjà plein par autre chose),
+// on retente une version encore plus légère, sans avatar, avant d'abandonner.
 function saveCachedPostsToLocalStorage(){
+  const build = (withAvatar) => remotePosts.slice(0, CACHED_POSTS_MAX).map(p => ({
+    id:p.id, remote:true, authorId:p.authorId, createdAt:p.createdAt,
+    name:p.name, initial:p.initial, avatarUrl: withAvatar ? p.avatarUrl : null, color:p.color,
+    verified:false, time:p.time, place:p.place, title:p.title, text:p.text,
+    photo:null, photos:null, audio:null, hasAudio:p.hasAudio,
+    exactLat:p.exactLat, exactLng:p.exactLng,
+    likes:p.likes, commentCount:p.commentCount, liked:p.liked, cat:p.cat,
+    urgency:p.urgency, cleared:p.cleared, clearConfirms:p.clearConfirms,
+    sponsored:p.sponsored, likers:[], comments:[]
+  }));
   try{
-    const trimmed = remotePosts.slice(0, CACHED_POSTS_MAX).map(p => ({
-      id:p.id, remote:true, authorId:p.authorId, createdAt:p.createdAt,
-      name:p.name, initial:p.initial, avatarUrl:p.avatarUrl, color:p.color,
-      verified:false, time:p.time, place:p.place, title:p.title, text:p.text,
-      photo:p.photo, photos:null, audio:null, hasAudio:p.hasAudio,
-      exactLat:p.exactLat, exactLng:p.exactLng,
-      likes:p.likes, commentCount:p.commentCount, liked:p.liked, cat:p.cat,
-      urgency:p.urgency, cleared:p.cleared, clearConfirms:p.clearConfirms,
-      sponsored:p.sponsored, likers:[], comments:[]
-    }));
-    localStorage.setItem(CACHED_POSTS_KEY, JSON.stringify(trimmed));
-  }catch(e){ /* quota dépassé ou stockage bloqué (navigation privée...) : tant pis, pas bloquant */ }
+    localStorage.setItem(CACHED_POSTS_KEY, JSON.stringify(build(true)));
+  }catch(e){
+    try{ localStorage.setItem(CACHED_POSTS_KEY, JSON.stringify(build(false))); }
+    catch(e2){ /* quota toujours dépassé ou stockage bloqué (navigation privée...) : tant pis, pas bloquant */ }
+  }
 }
 function renderCachedPostsInstantly(){
   try{
