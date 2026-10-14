@@ -1167,10 +1167,18 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <div id="audio-zone">
             <label class="photo-drop" for="f-audio">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-              <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter un extrait de ton morceau</span>
+              <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter un morceau (tu choisiras les 30s à publier)</span>
             </label>
-            <input type="file" id="f-audio" accept="audio/*" style="display:none" onchange="handleAudio(event)">
           </div>
+          <!-- En dehors de #audio-zone exprès, même raison que #f-photo plus
+               haut : ce bloc est régénéré par handleAudio()/removeAudio()
+               (aperçu, puis réglage de l'extrait de 30s), ce qui effaçait ce
+               champ et rendait "Ajouter un morceau" inopérant après un
+               premier essai. accept volontairement large (MIME + extensions)
+               car certains "sélecteurs de fichiers" mobiles (Fichiers,
+               Drive...) ne reconnaissent pas toujours bien audio/* seul pour
+               les .mp3. -->
+          <input type="file" id="f-audio" accept="audio/*,.mp3,.m4a,.wav,.aac,.ogg,.flac" style="display:none" onchange="handleAudio(event)">
         </div>
         <div id="enddate-block" style="display:none;">
           <label class="field-label" for="f-enddate">Date de fin</label>
@@ -2320,7 +2328,7 @@ async function loadRemotePosts(){
       avatarUrl: row.author_avatar_url || null,
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
-      photos: (row.photos && row.photos.length) ? row.photos : null, audio:null,
+      photos: (row.photos && row.photos.length) ? row.photos : null, audio: row.audio_url || null,
       exactLat: row.exact_lat ?? null, exactLng: row.exact_lng ?? null,
       likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
@@ -3111,30 +3119,174 @@ function renderPhotoZone(){
   zone.innerHTML = `<div class="catalog-grid">${thumbs}${addMore}</div>`;
 }
 
-let pendingAudio = null;
-function handleAudio(e){
+/* Extrait audio : l'artiste choisit QUELLE partie de son morceau (jusqu'à
+   30s) est publiée, plutôt que d'envoyer le fichier entier (ce qui, en plus
+   d'être énorme à charger pour tout le monde, n'était avant même pas
+   envoyé à la base — voir insertPayload plus bas). Le fichier est décodé
+   dans le navigateur (Web Audio), rééchantillonné en mono/22kHz pour rester
+   léger, découpé à la fenêtre choisie, puis encodé en WAV → base64. */
+let pendingAudio = null;      // extrait final (WAV base64), prêt à publier
+let audioFullBuffer = null;   // morceau entier décodé, pour prévisualiser/découper
+let audioClipStart = 0;       // début de la fenêtre de 30s choisie (secondes)
+const AUDIO_CLIP_SECONDS = 30;
+const AUDIO_CLIP_SAMPLE_RATE = 22050; // mono + taux réduit : fichier ~4x plus léger qu'un export CD
+
+function fmtMMSS(s){
+  s = Math.max(0, Math.round(s));
+  return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+}
+
+async function handleAudio(e){
   const file = e.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev){
-    pendingAudio = ev.target.result;
-    document.getElementById('audio-zone').innerHTML = `
-      <div style="display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 12px;">
-        <audio controls src="${pendingAudio}" style="flex-grow:1; height:36px; min-width:0;"></audio>
-        <div class="photo-remove" style="position:static; background:rgba(0,0,0,0.55); flex-shrink:0;" onclick="removeAudio()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </div>
-      </div>`;
-  };
-  reader.readAsDataURL(file);
+  if(file.size > 80*1024*1024){
+    toast('Fichier trop lourd (max ~80 Mo), essaie un extrait plus court');
+    removeAudio();
+    return;
+  }
+  document.getElementById('audio-zone').innerHTML = `<div style="font-size:12.5px; color:var(--muted); padding:10px;">Lecture du fichier…</div>`;
+  let arrayBuffer;
+  try{ arrayBuffer = await file.arrayBuffer(); }
+  catch(err){ console.warn('Lecture du fichier audio impossible', err); toast('Fichier illisible, réessaie'); removeAudio(); return; }
+  try{
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const decodeCtx = new AudioCtx();
+    audioFullBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+  }catch(err){
+    console.warn('Décodage audio impossible', err);
+    toast("Ce format audio n'est pas reconnu par le navigateur — essaie en MP3 ou WAV");
+    removeAudio();
+    return;
+  }
+  audioClipStart = 0;
+  if(audioFullBuffer.duration <= AUDIO_CLIP_SECONDS){
+    await buildAudioClip();
+  } else {
+    renderAudioTrimUI();
+  }
+}
+
+function renderAudioTrimUI(){
+  const maxStart = Math.max(0, audioFullBuffer.duration - AUDIO_CLIP_SECONDS);
+  document.getElementById('audio-zone').innerHTML = `
+    <div style="border:1px solid var(--line); border-radius:12px; padding:12px; background:var(--surface);">
+      <div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">Choisis les 30 secondes à publier (morceau de ${fmtMMSS(audioFullBuffer.duration)})</div>
+      <input type="range" id="audio-trim-slider" min="0" max="${maxStart}" step="0.5" value="0" style="width:100%;" oninput="updateAudioTrimLabel(this.value)">
+      <div style="text-align:center; font-size:12.5px; font-weight:700; color:var(--ink); margin-top:2px;" id="audio-trim-label">${fmtMMSS(0)} – ${fmtMMSS(AUDIO_CLIP_SECONDS)}</div>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button type="button" onclick="previewAudioTrim()" style="flex:1; padding:9px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-weight:700; font-size:12.5px;">▶ Écouter</button>
+        <button type="button" onclick="confirmAudioTrim()" style="flex:1; padding:9px; border-radius:10px; border:none; background:#8B5CF6; color:#fff; font-weight:700; font-size:12.5px;">✓ Valider cet extrait</button>
+      </div>
+      <div style="text-align:center; margin-top:8px; font-size:11.5px; color:var(--muted); cursor:pointer; text-decoration:underline;" onclick="removeAudio()">Retirer ce fichier</div>
+    </div>`;
+}
+function updateAudioTrimLabel(v){
+  audioClipStart = parseFloat(v);
+  const label = document.getElementById('audio-trim-label');
+  if(label) label.textContent = fmtMMSS(audioClipStart) + ' – ' + fmtMMSS(audioClipStart + AUDIO_CLIP_SECONDS);
+}
+function previewAudioTrim(){
+  if(!audioFullBuffer) return;
+  try{
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const playCtx = new AudioCtx();
+    const src = playCtx.createBufferSource();
+    src.buffer = audioFullBuffer;
+    src.connect(playCtx.destination);
+    const dur = Math.min(AUDIO_CLIP_SECONDS, audioFullBuffer.duration - audioClipStart);
+    src.start(0, audioClipStart, dur);
+  }catch(err){ console.warn('Erreur prévisualisation audio', err); }
+}
+async function confirmAudioTrim(){
+  await buildAudioClip();
+}
+/* Découpe le morceau décodé à [audioClipStart, +30s], le rééchantillonne en
+   mono/22kHz (via OfflineAudioContext, qui fait le ré-échantillonnage et le
+   mixage des canaux automatiquement), puis l'encode en WAV → base64. */
+async function buildAudioClip(){
+  if(!audioFullBuffer) return;
+  document.getElementById('audio-zone').innerHTML = `<div style="font-size:12.5px; color:var(--muted); padding:10px;">Préparation de l'extrait…</div>`;
+  const clipDuration = Math.min(AUDIO_CLIP_SECONDS, audioFullBuffer.duration - audioClipStart);
+  const frameCount = Math.max(1, Math.ceil(clipDuration * AUDIO_CLIP_SAMPLE_RATE));
+  try{
+    const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const offlineCtx = new OfflineCtx(1, frameCount, AUDIO_CLIP_SAMPLE_RATE);
+    const src = offlineCtx.createBufferSource();
+    src.buffer = audioFullBuffer;
+    src.connect(offlineCtx.destination);
+    src.start(0, audioClipStart, clipDuration);
+    const renderedBuffer = await offlineCtx.startRendering();
+    const wavBlob = audioBufferToWavBlob(renderedBuffer);
+    pendingAudio = await blobToBase64(wavBlob);
+  }catch(err){
+    console.warn('Erreur préparation extrait audio', err);
+    toast('Erreur de traitement audio, réessaie');
+    removeAudio();
+    return;
+  }
+  document.getElementById('audio-zone').innerHTML = `
+    <div style="display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 12px;">
+      <audio controls src="${pendingAudio}" style="flex-grow:1; height:36px; min-width:0;"></audio>
+      <div class="photo-remove" style="position:static; background:rgba(0,0,0,0.55); flex-shrink:0;" onclick="removeAudio()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </div>
+    </div>`;
+}
+function blobToBase64(blob){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+/* Encodeur WAV (PCM 16-bit) minimal — pas de dépendance externe. */
+function audioBufferToWavBlob(buffer){
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const numFrames = buffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const dataSize = numFrames * blockAlign;
+  const out = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(out);
+  const writeString = (offset, str) => { for(let i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataSize, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataSize, true);
+  const channels = [];
+  for(let c=0; c<numChannels; c++) channels.push(buffer.getChannelData(c));
+  let offset = 44;
+  for(let i=0; i<numFrames; i++){
+    for(let c=0; c<numChannels; c++){
+      let sample = Math.max(-1, Math.min(1, channels[c][i]));
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+      view.setInt16(offset, sample, true);
+      offset += 2;
+    }
+  }
+  return new Blob([out], {type: 'audio/wav'});
 }
 function removeAudio(){
   pendingAudio = null;
-  document.getElementById('f-audio').value = '';
+  audioFullBuffer = null;
+  audioClipStart = 0;
+  const input = document.getElementById('f-audio');
+  if(input) input.value = '';
   document.getElementById('audio-zone').innerHTML = `
     <label class="photo-drop" for="f-audio">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-      <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter un extrait de ton morceau</span>
+      <span style="font-size:12px; color:#78909C; font-weight:700;">Ajouter un morceau (tu choisiras les 30s à publier)</span>
     </label>`;
 }
 
@@ -3198,6 +3350,7 @@ async function actuallyPublish(){
         description: desc || null,
         photo_url: pendingPhoto || null,
         photos: pendingPhotos.length > 1 ? pendingPhotos : null,
+        audio_url: pendingAudio || null,
         commune: selectedCommune,
         urgency: selectedCat==='trafic' ? selectedUrgency : null,
         location: geoPoint,
