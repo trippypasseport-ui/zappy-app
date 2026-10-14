@@ -1884,6 +1884,8 @@ let myAvatarUrl = null;
 let myMemberSince = null;
 let amIAdmin = false;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
+let audioAvailableIds = new Set(); // ids des publications qui ont un extrait audio (voir loadRemotePosts/playPostAudio)
+let loadedAudioCache = {};  // extraits déjà récupérés à la demande (publication_id -> data URL), pour ne pas les re-télécharger
 let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
 let myFollows = new Set();  // ids des membres/artistes que CET utilisateur suit (voir toggleFollow)
 let followersCount = 0;     // nb de membres qui suivent CET utilisateur (voir loadFollowersCount)
@@ -2306,12 +2308,24 @@ async function loadRemotePosts(){
   // jamais être chargée : c'est ce qui la fait "disparaître" automatiquement
   // de partout (fil, carte) sans avoir besoin d'une tâche serveur dédiée.
   const nowIso = new Date().toISOString();
-  const { data, error } = await sb
-    .from('publications')
-    .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
-    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-    .order('created_at', {ascending:false});
+  // L'extrait audio vit dans sa propre table (publication_audio), jamais
+  // chargé ici : un extrait de 30s pèse ~1,7 Mo, et l'embarquer dans CE
+  // select (rechargé à chaque like/commentaire/nouvelle publication, et
+  // diffusé en temps réel à tout le monde via Realtime) alourdissait tout
+  // le fil pour tout le monde en permanence. On charge juste la LISTE des
+  // publications qui ont un extrait (quelques octets), et le contenu audio
+  // lui-même n'est récupéré qu'à la demande, quand quelqu'un appuie sur
+  // écouter — voir playPostAudio().
+  const [postsRes, audioIdsRes] = await Promise.all([
+    sb.from('publications')
+      .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .order('created_at', {ascending:false}),
+    sb.from('publication_audio').select('publication_id'),
+  ]);
+  const { data, error } = postsRes;
   if(error){ console.warn('Erreur chargement publications', error); return; }
+  audioAvailableIds = new Set((audioIdsRes.data||[]).map(r => r.publication_id));
   const catMeta = {};
   CATEGORIES.forEach(c => catMeta[c.id] = c);
   remotePosts = (data||[]).map(row => {
@@ -2328,7 +2342,8 @@ async function loadRemotePosts(){
       avatarUrl: row.author_avatar_url || null,
       color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
-      photos: (row.photos && row.photos.length) ? row.photos : null, audio: row.audio_url || null,
+      photos: (row.photos && row.photos.length) ? row.photos : null,
+      audio: loadedAudioCache[row.id] || null, hasAudio: audioAvailableIds.has(row.id),
       exactLat: row.exact_lat ?? null, exactLng: row.exact_lng ?? null,
       likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
@@ -2473,7 +2488,11 @@ function renderPosts(){
         ${p.sponsored ? `<span class="sponsor-badge">★ Sponsorisé</span>` : ''}
         <div class="post-title">${p.title}</div>
         <div class="post-text">${p.text}</div>
-        ${p.audio? `<audio controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;" onclick="event.stopPropagation()"></audio>` : ''}
+        ${p.audio
+          ? `<audio id="post-audio-${p.id}" controls src="${p.audio}" style="width:100%; height:34px; margin-bottom:8px;" onclick="event.stopPropagation()"></audio>`
+          : (p.hasAudio
+            ? `<button type="button" onclick="event.stopPropagation(); playPostAudio('${p.id}')" style="display:flex; align-items:center; gap:6px; padding:8px 12px; margin-bottom:8px; border:1px solid var(--line); border-radius:10px; background:var(--surface); color:var(--ink); font-weight:700; font-size:12.5px; cursor:pointer;">▶ Écouter l'extrait (30s)</button>`
+            : '')}
         <div class="post-actions">
           <div class="action ${p.liked?'liked':''}" onclick="event.stopPropagation(); toggleLike('${p.id}')">${heartIcon(p.liked)}<span>${p.likes}</span></div>
           <div class="action" onclick="event.stopPropagation(); openComments('${p.id}')">${commentIcon}<span>${p.commentCount}</span></div>
@@ -2485,6 +2504,30 @@ function renderPosts(){
         ? `<div class="post-gallery">${p.photos.map(ph=>`<img src="${ph}" alt="" onclick="event.stopPropagation(); openPhotoViewer('${ph}')">`).join('')}</div>`
         : (p.photo? `<div class="post-photo"><img src="${p.photo}" alt="" onclick="event.stopPropagation(); openPhotoViewer('${p.photo}')"></div>` : '')}
     </div>`).join('');
+}
+/* Récupère l'extrait audio d'une publication à la demande (voir
+   loadRemotePosts() : il n'est jamais chargé avec le reste du fil pour ne
+   pas l'alourdir), le mémorise pour ne pas le re-télécharger, puis relance
+   la lecture — le navigateur peut bloquer la lecture automatique d'un
+   élément recréé après un rendu async, donc on la déclenche nous-mêmes. */
+async function playPostAudio(id){
+  if(!sb) return;
+  if(loadedAudioCache[id]){
+    const remote = remotePosts.find(x=>String(x.id)===String(id));
+    if(remote) remote.audio = loadedAudioCache[id];
+    renderPosts();
+    const player = document.getElementById('post-audio-'+id);
+    if(player) player.play().catch(()=>{});
+    return;
+  }
+  const { data, error } = await sb.from('publication_audio').select('audio_data').eq('publication_id', id).maybeSingle();
+  if(error || !data){ console.warn('Erreur chargement extrait audio', error); toast('Extrait indisponible, réessaie'); return; }
+  loadedAudioCache[id] = data.audio_data;
+  const remote = remotePosts.find(x=>String(x.id)===String(id));
+  if(remote) remote.audio = data.audio_data;
+  renderPosts();
+  const player = document.getElementById('post-audio-'+id);
+  if(player) player.play().catch(()=>{});
 }
 async function toggleLike(id){
   const remote = remotePosts.find(x=>String(x.id)===String(id));
@@ -3383,7 +3426,6 @@ async function actuallyPublish(){
         description: desc || null,
         photo_url: pendingPhoto || null,
         photos: pendingPhotos.length > 1 ? pendingPhotos : null,
-        audio_url: pendingAudio || null,
         commune: selectedCommune,
         urgency: selectedCat==='trafic' ? selectedUrgency : null,
         location: geoPoint,
@@ -3402,9 +3444,19 @@ async function actuallyPublish(){
       } else if(isMerchantPost){
         insertPayload.expires_at = new Date(Date.now() + 7*24*60*60*1000).toISOString();
       }
-      const { error } = await sb.from('publications').insert(insertPayload);
+      const { data: insertedRow, error } = await sb.from('publications').insert(insertPayload).select('id').single();
       if(error){ console.warn('Publication partagée échouée, repli local', error); }
-      else { publishedRemotely = true; await loadRemotePosts(); }
+      else {
+        publishedRemotely = true;
+        // L'extrait audio est stocké à part (voir loadRemotePosts) — inséré
+        // une fois l'id de la publication connu, et AVANT loadRemotePosts()
+        // pour qu'il apparaisse comme disponible dès le premier affichage.
+        if(pendingAudio){
+          const { error: audioError } = await sb.from('publication_audio').insert({ publication_id: insertedRow.id, audio_data: pendingAudio });
+          if(audioError) console.warn('Extrait audio non enregistré', audioError);
+        }
+        await loadRemotePosts();
+      }
     }
   } catch(err){
     console.warn('Erreur réseau lors de la publication, repli local', err);
