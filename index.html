@@ -1245,7 +1245,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <div class="menu-label">Notifications</div>
           <span style="color:var(--muted)">›</span>
         </div>
-        <div class="menu-row" onclick="toast('Aide & support — à venir')">
+        <div class="menu-row" onclick="showScreen('support')">
           <div class="menu-ico" style="background:#78909C"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 3.5"/><circle cx="12" cy="17" r="0.6" fill="#fff" stroke="none"/></svg></div>
           <div class="menu-label">Aide &amp; support</div>
           <span style="color:var(--muted)">›</span>
@@ -1406,6 +1406,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
       <div class="section-tag">Tarifs des abonnements (affiche Espace commerçant)</div>
       <div class="admin-list" id="admin-plan-tiers"></div>
 
+      <div class="section-tag">Codes promo (geste commercial, à donner à la main)</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Génère un code à présenter aux premiers commerçants — ce code n'est vérifié nulle part dans l'app, c'est juste un repère pour toi.</div>
+        <input type="text" id="promo-code-label" placeholder="Pour qui ? (ex : Boutique Ti Bijou)" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:8px;">
+        <button type="button" class="submit-btn" onclick="generatePromoCode()">Générer un code</button>
+      </div>
+      <div class="admin-list" id="admin-promo-codes"></div>
+
       <div class="section-tag">Abonnements commerçants</div>
       <div class="admin-list" id="admin-merchants"></div>
 
@@ -1441,6 +1449,36 @@ svg.leaflet-image-layer.leaflet-interactive path {
         Choisis les catégories pour lesquelles tu veux être notifié à proximité.
       </div>
       <div class="menu-list" id="notif-list" style="padding-top:12px; padding-bottom:20px;"></div>
+    </section>
+
+    <!-- AIDE & SUPPORT -->
+    <section class="screen" id="screen-support">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title">Aide &amp; support</div>
+      </div>
+      <div class="section-tag">Questions fréquentes</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface); display:flex; flex-direction:column; gap:12px;">
+        <div>
+          <div style="font-size:13px; font-weight:800; color:var(--ink); margin-bottom:2px;">Comment supprimer ma publication ?</div>
+          <div style="font-size:12.5px; color:var(--muted); line-height:1.4;">Ouvre-la, puis touche « Modifier » ou « Supprimer » en haut (visible uniquement sur tes propres publications).</div>
+        </div>
+        <div>
+          <div style="font-size:13px; font-weight:800; color:var(--ink); margin-bottom:2px;">Comment devenir commerçant sur Zapy ?</div>
+          <div style="font-size:12.5px; color:var(--muted); line-height:1.4;">Depuis ton Profil, ouvre « Espace commerçant » et choisis une formule.</div>
+        </div>
+        <div>
+          <div style="font-size:13px; font-weight:800; color:var(--ink); margin-bottom:2px;">Je ne reçois pas d'email de confirmation</div>
+          <div style="font-size:12.5px; color:var(--muted); line-height:1.4;">Vérifie tes spams, et patiente quelques minutes — en cas de forte affluence, l'envoi peut être temporairement limité.</div>
+        </div>
+      </div>
+      <div class="section-tag">Nous contacter</div>
+      <div style="margin:0 18px 20px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">Décris ton problème, l'équipe Zapy te répond sous 24-48h.</div>
+        <textarea id="support-message-input" placeholder="Ton message…" rows="4" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; box-sizing:border-box; margin-bottom:8px; resize:vertical;"></textarea>
+        <button type="button" class="submit-btn" onclick="submitSupportMessage()">Envoyer</button>
+        <div id="support-ack" style="display:none; margin-top:10px; padding:10px; border-radius:10px; background:#E3F6E8; color:#1B6B3A; font-size:12.5px; line-height:1.4;">✓ Merci, ton message a été transmis à l'équipe Zapy. Tu auras une réponse sous 24-48h.</div>
+      </div>
     </section>
 
     <!-- MESSAGES -->
@@ -3085,6 +3123,10 @@ function showScreen(name){
   }
   if(name==='admin') renderAdmin();
   if(name==='notifications') renderNotifPrefs();
+  if(name==='support'){
+    const ack = document.getElementById('support-ack');
+    if(ack) ack.style.display = 'none';
+  }
   if(name==='publier') initLocationUI();
   if(name==='meteo'){ renderWeather(); renderWxReports(); }
   if(name==='randonnee'){ renderTrails(); renderHikeReports(); }
@@ -3875,6 +3917,23 @@ async function submitReport(){
   toast('Signalement envoyé — l’équipe va l’examiner');
 }
 
+/* ---- Aide & support ---- Le "message automatique" demandé par le client
+   est l'accusé de réception affiché immédiatement après l'envoi (#support-ack)
+   — pas une réponse générée, qui supposerait de comprendre la question.
+   Le message lui-même reste consultable par l'équipe Zapy (table
+   support_messages, lisible par l'auteur ou un admin). */
+async function submitSupportMessage(){
+  const input = document.getElementById('support-message-input');
+  const message = input.value.trim();
+  if(!message){ toast('Écris ton message avant d’envoyer'); return; }
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const { error } = await sb.from('support_messages').insert({ user_id: currentUserId, author_name: myPseudo, message });
+  if(error){ console.warn('Erreur envoi message support', error); toast('Erreur, réessaie'); return; }
+  input.value = '';
+  const ack = document.getElementById('support-ack');
+  if(ack) ack.style.display = 'block';
+}
+
 /* ---- Modifier / supprimer sa propre publication ---- */
 let editingPubId = null;
 function openEditModal(pubId){
@@ -3957,6 +4016,9 @@ let PLAN_TIERS = [
 async function loadPlanTierPrices(){
   if(!sb) return;
   try{
+    // Malgré son nom (conservé pour ne pas casser les appels existants),
+    // get_plan_tier_prices() renvoie maintenant aussi le nom et les
+    // avantages de chaque formule — voir set_plan_tier_details().
     const { data, error } = await sb.rpc('get_plan_tier_prices');
     if(error || !data) return;
     const byKey = {};
@@ -3964,8 +4026,12 @@ async function loadPlanTierPrices(){
     PLAN_TIERS.forEach(t => {
       const v = byKey['plan_price_' + t.id];
       if(v != null){ const n = parseFloat(v); if(!isNaN(n)) t.price = n; }
+      const n = byKey['plan_name_' + t.id];
+      if(n){ t.name = n; }
+      const f = byKey['plan_feats_' + t.id];
+      if(f){ try{ const arr = JSON.parse(f); if(Array.isArray(arr)) t.feats = arr; }catch(e){} }
     });
-  }catch(e){ /* repli silencieux : garde les prix par défaut ci-dessus */ }
+  }catch(e){ /* repli silencieux : garde les valeurs par défaut ci-dessus */ }
 }
 
 /* ---- Abonnement commerçant de CET utilisateur ----
@@ -4067,21 +4133,98 @@ function startMerchantPublish(){
   selectFormCat('commerces');
   isMerchantPost = true;
 }
+// Modifie en une fois le nom, le prix ET les avantages inclus d'une formule
+// (set_plan_tier_details, admin uniquement) — avant, seul le prix était
+// modifiable (set_plan_tier_price). Trois prompt() à la suite plutôt qu'un
+// vrai formulaire, pour rester cohérent avec le reste de l'admin (voir
+// generateInvoice, confirmDeleteAccount, etc. qui font de même).
 async function editPlanTierPrice(id){
   const t = PLAN_TIERS.find(x=>x.id===id);
   if(!t) return;
-  const input = prompt('Nouveau prix mensuel pour la formule "' + t.name + '" (en €) :', t.price);
-  if(input === null) return;
-  const price = parseFloat(input.replace(',', '.'));
+  const nameInput = prompt('Nom de la formule :', t.name);
+  if(nameInput === null) return;
+  const name = nameInput.trim();
+  if(!name){ toast('Le nom ne peut pas être vide'); return; }
+  const priceInput = prompt('Prix mensuel pour "' + name + '" (en €) :', t.price);
+  if(priceInput === null) return;
+  const price = parseFloat(priceInput.replace(',', '.'));
   if(isNaN(price) || price < 0){ toast('Prix invalide'); return; }
   const rounded = Math.round(price * 100) / 100;
+  const featsInput = prompt('Avantages inclus, un par ligne :', t.feats.join('\n'));
+  if(featsInput === null) return;
+  const feats = featsInput.split('\n').map(f => f.trim()).filter(Boolean);
+  if(feats.length === 0){ toast('Indique au moins un avantage'); return; }
   if(!sb){ toast('Connexion indisponible, réessaie plus tard'); return; }
-  const { data, error } = await sb.rpc('set_plan_tier_price', { tier_id: t.id, new_price: rounded });
-  if(error || data !== true){ console.warn('Erreur changement de tarif', error); toast('Erreur, réessaie'); return; }
+  const { data, error } = await sb.rpc('set_plan_tier_details', { tier_id: t.id, new_name: name, new_price: rounded, new_feats: feats });
+  if(error || data !== true){ console.warn('Erreur mise à jour de la formule', error); toast('Erreur, réessaie'); return; }
   await loadPlanTierPrices();
   renderAdmin();
   renderPricingList();
-  toast('Tarif "' + t.name + '" mis à jour — ' + t.price + '€/mois');
+  toast('Formule "' + t.name + '" mise à jour — ' + t.price + '€/mois');
+}
+/* ---- Codes promo (geste commercial manuel, voir promo_codes) ----
+   Ces codes ne sont vérifiés nulle part dans le parcours de paiement :
+   c'est juste un pense-bête pour l'admin, à présenter à la main aux
+   premiers commerçants (demande explicite du client — pas d'automatisation
+   voulue ici). */
+let promoCodes = [];
+async function loadPromoCodes(){
+  promoCodes = [];
+  if(!sb) return;
+  const { data, error } = await sb.from('promo_codes').select('*').order('created_at', {ascending:false});
+  if(error){ console.warn('Erreur chargement codes promo', error); return; }
+  promoCodes = data || [];
+  renderPromoCodes();
+}
+function renderPromoCodes(){
+  const el = document.getElementById('admin-promo-codes');
+  if(!el) return;
+  if(promoCodes.length === 0){
+    el.innerHTML = '<div style="padding:0 18px; font-size:12.5px; color:var(--muted);">Aucun code généré pour l\'instant.</div>';
+    return;
+  }
+  el.innerHTML = promoCodes.map(c => `
+    <div class="admin-row">
+      <div class="admin-main">
+        <div class="admin-title" style="font-family:monospace; letter-spacing:1px;">${c.code}</div>
+        <div class="admin-meta">${c.label || 'Sans libellé'}</div>
+      </div>
+      <div class="admin-actions">
+        <div class="admin-btn" onclick="copyPromoCode('${c.code}')" title="Copier le code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></div>
+        <div class="admin-btn" onclick="deletePromoCode('${c.id}')" title="Supprimer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#D32F2F" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div>
+      </div>
+    </div>`).join('');
+}
+function randomPromoCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O/1/I, ambigus à relire à l'oral
+  let code = 'ZAPY-';
+  for(let i=0; i<6; i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+async function generatePromoCode(){
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const labelInput = document.getElementById('promo-code-label');
+  const label = labelInput.value.trim();
+  const code = randomPromoCode();
+  const { error } = await sb.from('promo_codes').insert({ code, label: label || null, created_by: currentUserId });
+  if(error){ console.warn('Erreur génération du code promo', error); toast('Erreur, réessaie'); return; }
+  labelInput.value = '';
+  await loadPromoCodes();
+  toast('Code généré : ' + code);
+}
+function copyPromoCode(code){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(() => toast('Code copié : ' + code)).catch(() => toast(code));
+  } else {
+    toast(code);
+  }
+}
+async function deletePromoCode(id){
+  if(!confirm('Supprimer ce code promo ?')) return;
+  if(!sb){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  const { error } = await sb.from('promo_codes').delete().eq('id', id);
+  if(error){ console.warn('Erreur suppression du code promo', error); toast('Erreur, réessaie'); return; }
+  await loadPromoCodes();
 }
 function renderPricingList(){
   const el = document.getElementById('pricing-list');
@@ -4180,12 +4323,14 @@ async function renderAdmin(){
     <div class="admin-row">
       <div class="admin-main">
         <div class="admin-title">${t.name}</div>
-        <div class="admin-meta">${t.price}€/mois · affiché dans l'Espace commerçant</div>
+        <div class="admin-meta">${t.price}€/mois · ${t.feats.length} avantage${t.feats.length>1?'s':''} · affiché dans l'Espace commerçant</div>
       </div>
       <div class="admin-actions">
-        <div class="admin-btn" onclick="editPlanTierPrice('${t.id}')" title="Modifier le tarif"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
+        <div class="admin-btn" onclick="editPlanTierPrice('${t.id}')" title="Modifier la formule (nom, prix, avantages)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></div>
       </div>
     </div>`).join('');
+
+  await loadPromoCodes();
 
   document.getElementById('admin-merchants').innerHTML = merchants.map(m => `
     <div class="admin-row">
