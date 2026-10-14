@@ -2257,16 +2257,22 @@ async function initBackend(){
     // "await" étant un aller-retour réseau attendu un par un.
     await loadMyFollows();
     initDevicePush();
+    // Chaque chargement attrape sa propre erreur (.catch) plutôt que de
+    // laisser Promise.all rejeter en bloc : sans ça, un seul chargement en
+    // échec empêchait TOUT le reste de la fonction de s'exécuter (y compris
+    // les abonnements temps réel juste après), pas seulement celui qui a
+    // échoué.
+    const safe = (p, label) => p.catch(err => console.warn('Chargement initial échoué : ' + label, err));
     await Promise.all([
-      loadRemotePosts(),
-      loadFollowersList(),
-      loadMySocialLink(),
-      loadMyFavorites(),
-      loadMyPlan(),
-      loadNotifications(),
-      loadRemoteWxReports(),
-      loadRemoteHikeReports(),
-      loadRemoteTrails(),
+      safe(loadRemotePosts(), 'publications'),
+      safe(loadFollowersList(), 'abonnés'),
+      safe(loadMySocialLink(), 'lien social'),
+      safe(loadMyFavorites(), 'favoris'),
+      safe(loadMyPlan(), 'formule commerçant'),
+      safe(loadNotifications(), 'notifications'),
+      safe(loadRemoteWxReports(), 'météo'),
+      safe(loadRemoteHikeReports(), 'randonnées'),
+      safe(loadRemoteTrails(), 'sentiers'),
     ]);
     sb.channel('public:notifications')
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+currentUserId}, (payload) => {
@@ -2308,6 +2314,12 @@ async function loadRemotePosts(){
   // jamais être chargée : c'est ce qui la fait "disparaître" automatiquement
   // de partout (fil, carte) sans avoir besoin d'une tâche serveur dédiée.
   const nowIso = new Date().toISOString();
+  const { data, error } = await sb
+    .from('publications')
+    .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order('created_at', {ascending:false});
+  if(error){ console.warn('Erreur chargement publications', error); return; }
   // L'extrait audio vit dans sa propre table (publication_audio), jamais
   // chargé ici : un extrait de 30s pèse ~1,7 Mo, et l'embarquer dans CE
   // select (rechargé à chaque like/commentaire/nouvelle publication, et
@@ -2315,17 +2327,16 @@ async function loadRemotePosts(){
   // le fil pour tout le monde en permanence. On charge juste la LISTE des
   // publications qui ont un extrait (quelques octets), et le contenu audio
   // lui-même n'est récupéré qu'à la demande, quand quelqu'un appuie sur
-  // écouter — voir playPostAudio().
-  const [postsRes, audioIdsRes] = await Promise.all([
-    sb.from('publications')
-      .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
-      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-      .order('created_at', {ascending:false}),
-    sb.from('publication_audio').select('publication_id'),
-  ]);
-  const { data, error } = postsRes;
-  if(error){ console.warn('Erreur chargement publications', error); return; }
-  audioAvailableIds = new Set((audioIdsRes.data||[]).map(r => r.publication_id));
+  // écouter — voir playPostAudio(). Requête séparée et isolée dans son
+  // propre try/catch : un souci sur cette table annexe ne doit JAMAIS
+  // empêcher le fil principal de s'afficher.
+  try{
+    const { data: audioIds, error: audioError } = await sb.from('publication_audio').select('publication_id');
+    if(audioError) console.warn('Erreur chargement des extraits disponibles', audioError);
+    audioAvailableIds = new Set((audioIds||[]).map(r => r.publication_id));
+  }catch(err){
+    console.warn('Erreur chargement des extraits disponibles', err);
+  }
   const catMeta = {};
   CATEGORIES.forEach(c => catMeta[c.id] = c);
   remotePosts = (data||[]).map(row => {
