@@ -2233,30 +2233,37 @@ async function initBackend(){
       myPseudo = getPseudo();
     }
     currentUserId = session.user.id;
-    // Le profil doit exister avant toute publication : author_id référence profiles(id).
-    // N'écrase pas avatar_url (non inclus dans la ligne envoyée, donc
-    // laissé tel quel par ON CONFLICT DO UPDATE côté serveur).
-    const { error: profileError } = await sb.from('profiles').upsert({ id: currentUserId, pseudo: myPseudo }, { onConflict: 'id' });
+    // Le profil doit exister avant toute publication : author_id référence
+    // profiles(id). Upsert + lecture d'avatar_url/created_at regroupés en
+    // UNE seule requête (plutôt qu'un upsert puis un select séparé juste
+    // après) grâce à .select() sur l'upsert lui-même — un aller-retour
+    // réseau de moins à chaque ouverture de l'app. N'écrase pas avatar_url
+    // (non inclus dans la ligne envoyée, donc laissé tel quel par ON
+    // CONFLICT DO UPDATE côté serveur), d'où le .select() qui relit bien sa
+    // valeur actuelle en base et pas ce qu'on vient d'envoyer.
+    const { data: myProfileRow, error: profileError } = await sb
+      .from('profiles')
+      .upsert({ id: currentUserId, pseudo: myPseudo }, { onConflict: 'id' })
+      .select('avatar_url, created_at')
+      .single();
     if(profileError){ console.warn('Création du profil impossible', profileError); }
-    const { data: myProfileRow } = await sb.from('profiles').select('avatar_url, created_at').eq('id', currentUserId).maybeSingle();
     myAvatarUrl = (myProfileRow && myProfileRow.avatar_url) || null;
     myMemberSince = (myProfileRow && myProfileRow.created_at) || null;
-    // myFollows doit être chargé avant loadRemotePosts() (le fil s'en sert
-    // pour mettre en avant les publications des membres suivis dès le
-    // premier rendu) — mais tout le reste est indépendant, donc chargé en
-    // parallèle plutôt qu'en série : c'est ce qui rendait l'ouverture de
-    // l'app de plus en plus lente à chaque fonctionnalité ajoutée, chaque
-    // "await" étant un aller-retour réseau attendu un par un.
-    await loadMyFollows();
     initDevicePush();
-    // Chaque chargement attrape sa propre erreur (.catch) plutôt que de
-    // laisser Promise.all rejeter en bloc : sans ça, un seul chargement en
-    // échec empêchait TOUT le reste de la fonction de s'exécuter (y compris
-    // les abonnements temps réel juste après), pas seulement celui qui a
-    // échoué.
+    // Tout le reste est indépendant (le fil n'a plus besoin d'attendre
+    // myFollows : le tri ne met plus les membres suivis en avant, voir plus
+    // bas), donc chargé en parallèle plutôt qu'en série — chaque "await"
+    // posé l'un après l'autre est un aller-retour réseau attendu en plus
+    // avant que l'app ne s'affiche, ce qui rendait l'ouverture de plus en
+    // plus lente à chaque fonctionnalité ajoutée. Chaque chargement attrape
+    // sa propre erreur (.catch) plutôt que de laisser Promise.all rejeter
+    // en bloc : sans ça, un seul chargement en échec empêchait TOUT le
+    // reste de la fonction de s'exécuter (y compris les abonnements temps
+    // réel juste après), pas seulement celui qui a échoué.
     const safe = (p, label) => p.catch(err => console.warn('Chargement initial échoué : ' + label, err));
     await Promise.all([
       safe(loadRemotePosts(), 'publications'),
+      safe(loadMyFollows(), 'abonnements'),
       safe(loadFollowersList(), 'abonnés'),
       safe(loadMySocialLink(), 'lien social'),
       safe(loadMyFavorites(), 'favoris'),
