@@ -3211,6 +3211,10 @@ async function publishWxReport(){
   selectedWxCondition = '☀️';
   removeWxPhoto();
   toast('Météo partagée, merci !');
+  // Comme pour une publication classique (voir actuallyPublish), on renvoie
+  // vers l'accueil une fois le partage terminé plutôt que de laisser
+  // l'utilisateur sur l'écran Météo.
+  showScreen('accueil');
 }
 
 /* Modifier / supprimer un partage météo ou photo de rando — réservé à son
@@ -3486,6 +3490,9 @@ async function publishHikeReport(){
   selectedHikeCondition = '🥾';
   removeHikePhoto();
   toast('Photo partagée, merci !');
+  // Même logique que pour une publication classique ou un partage météo :
+  // on renvoie vers l'accueil une fois le partage terminé.
+  showScreen('accueil');
 }
 function renderHikeReports(){
   const el = document.getElementById('hike-reports');
@@ -3586,7 +3593,10 @@ function renderProfile(){
     memberSinceEl.textContent = myMemberSince ? 'Membre depuis ' + formatMonthYear(myMemberSince) : 'Membre depuis —';
   }
   refreshAdminLinkVisibility();
-  const mine = posts.filter(p=>p.name==='Toi');
+  // Les publications réelles vivent dans remotePosts (Supabase), pas dans le
+  // tableau de démo "posts" : ne filtrer que ce dernier laissait ce compteur
+  // bloqué à 0 pour tout le monde dès qu'on publiait pour de vrai.
+  const mine = [...remotePosts, ...posts].filter(p => (p.authorId && p.authorId === currentUserId) || p.name === 'Toi');
   document.getElementById('stat-pubs').textContent = mine.length;
   document.getElementById('stat-confirms').textContent = mine.reduce((s,p)=>s+p.likes,0);
   document.getElementById('stat-favs').textContent = suggestions.filter(s=>s.fav).length;
