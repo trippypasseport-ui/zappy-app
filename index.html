@@ -105,7 +105,7 @@
   .action svg{transition:transform .15s;}
   .action.liked svg{transform:scale(1.15);}
   .post-photo{width:104px; flex-shrink:0; border-radius:12px; overflow:hidden; height:104px;}
-  .post-photo img{width:100%; height:100%; object-fit:cover; display:block;}
+  .post-photo img{width:100%; height:100%; object-fit:cover; display:block; cursor:pointer;}
 
   /* ---- Carte ---- */
   /* La hauteur de la carte est calculée et posée en pixels par JS
@@ -153,7 +153,7 @@
   .catalog-thumb .photo-remove svg{width:9px; height:9px;}
   .catalog-add{width:72px; height:72px; border-radius:12px; border:1.5px dashed #B3E0F5; background:var(--surface); display:flex; align-items:center; justify-content:center; font-size:26px; line-height:1; color:#4FC3F7; cursor:pointer; flex-shrink:0;}
   .post-gallery{display:flex; gap:6px; overflow-x:auto; margin-top:2px;}
-  .post-gallery img{width:90px; height:90px; border-radius:10px; object-fit:cover; flex-shrink:0;}
+  .post-gallery img{width:90px; height:90px; border-radius:10px; object-fit:cover; flex-shrink:0; cursor:pointer;}
   .loc-box{display:flex; align-items:center; justify-content:space-between; padding:12px 13px; border-radius:12px; border:1px solid var(--line); background:var(--surface);}
   .urgency-row{display:flex; gap:6px;}
   .urg-btn{flex-grow:1; text-align:center; padding:10px 0; border-radius:10px; border:1px solid var(--line); font-size:11.5px; font-weight:700; color:var(--muted); cursor:pointer; background:var(--surface);}
@@ -237,6 +237,7 @@
     background:rgba(0,0,0,0); pointer-events:none; transition:background .2s;
   }
   .comments-overlay.show{background:rgba(8,14,21,0.5); pointer-events:auto;}
+  #photo-viewer-overlay.show{background:rgba(5,8,12,0.95);}
   /* La carte plein écran doit masquer totalement la mini-carte de l'écran Carte
      derrière elle (sinon le fond semi-transparent laisse deviner une 2e carte) */
   #map-overlay.show{background:var(--bg-page);}
@@ -1600,6 +1601,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </div>
   </div>
 
+  <!-- Visionneuse plein écran : ouverte au clic sur une photo de
+       publication (vignette unique ou galerie), dans la liste comme dans
+       le détail (voir openPhotoViewer, appelé depuis renderPosts() et
+       renderComments()). -->
+  <div class="comments-overlay" id="photo-viewer-overlay" onclick="closePhotoViewer()" style="align-items:center; justify-content:center;">
+    <img id="photo-viewer-img" src="" alt="" style="max-width:92vw; max-height:85vh; object-fit:contain; border-radius:10px; display:block;" onclick="event.stopPropagation()">
+    <div class="icon-btn" onclick="closePhotoViewer()" style="position:absolute; top:36px; right:18px; background:rgba(255,255,255,0.18); color:#fff;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+  </div>
+
   <div class="comments-overlay" id="report-overlay" onclick="if(event.target===this) closeReportModal()">
     <div class="comments-sheet" style="max-height:48%;">
       <div class="comments-head">
@@ -2260,8 +2270,8 @@ function renderPosts(){
         </div>
       </div>
       ${p.photos && p.photos.length>1
-        ? `<div class="post-gallery">${p.photos.map(ph=>`<img src="${ph}" alt="">`).join('')}</div>`
-        : (p.photo? `<div class="post-photo"><img src="${p.photo}" alt=""></div>` : '')}
+        ? `<div class="post-gallery">${p.photos.map(ph=>`<img src="${ph}" alt="" onclick="event.stopPropagation(); openPhotoViewer('${ph}')">`).join('')}</div>`
+        : (p.photo? `<div class="post-photo"><img src="${p.photo}" alt="" onclick="event.stopPropagation(); openPhotoViewer('${p.photo}')"></div>` : '')}
     </div>`).join('');
 }
 async function toggleLike(id){
@@ -2301,6 +2311,18 @@ function sharePost(id){
   } else {
     toast(url);
   }
+}
+
+/* Visionneuse plein écran d'une photo de publication (voir
+   photo-viewer-overlay). Appelée avec stopPropagation() depuis les
+   vignettes, pour ne pas déclencher l'ouverture des commentaires en même
+   temps (ouverture par la carte parente, voir renderPosts()). */
+function openPhotoViewer(url){
+  document.getElementById('photo-viewer-img').src = url;
+  document.getElementById('photo-viewer-overlay').classList.add('show');
+}
+function closePhotoViewer(){
+  document.getElementById('photo-viewer-overlay').classList.remove('show');
 }
 
 /* ---- Commentaires ---- */
@@ -2489,8 +2511,8 @@ function renderComments(){
   // En-tête : le contenu complet de la publication, comme un vrai "ouvrir la
   // publication" (avant, ce panneau ne montrait que les commentaires).
   const galleryHtml = p.photos && p.photos.length>1
-    ? `<div class="post-gallery" style="margin-bottom:10px;">${p.photos.map(ph=>`<img src="${ph}" alt="">`).join('')}</div>`
-    : (p.photo? `<div style="width:100%; height:150px; border-radius:12px; overflow:hidden; margin-bottom:10px;"><img src="${p.photo}" style="width:100%; height:100%; object-fit:cover; display:block;"></div>` : '');
+    ? `<div class="post-gallery" style="margin-bottom:10px;">${p.photos.map(ph=>`<img src="${ph}" alt="" onclick="openPhotoViewer('${ph}')">`).join('')}</div>`
+    : (p.photo? `<div style="width:100%; height:150px; border-radius:12px; overflow:hidden; margin-bottom:10px;"><img src="${p.photo}" style="width:100%; height:100%; object-fit:cover; display:block;" onclick="openPhotoViewer('${p.photo}')"></div>` : '');
   let navLat = p.exactLat != null ? p.exactLat : null;
   let navLng = p.exactLng != null ? p.exactLng : null;
   if(navLat == null || navLng == null){
