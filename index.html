@@ -1275,6 +1275,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <button type="button" class="submit-btn" id="up-report-btn" style="display:none; background:#FFEBEE; color:#D32F2F;" onclick="openReportModal('user')">🚩 Signaler ce membre</button>
         <div style="font-size:11.5px; color:#78909C; margin-top:8px;">Réservé aux membres les plus actifs (classement), pour limiter les signalements abusifs.</div>
       </div>
+      <div id="up-recent-shares" style="padding:0 18px 20px;"></div>
     </section>
 
     <!-- ESPACE COMMERÇANT -->
@@ -1606,7 +1607,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
        le détail (voir openPhotoViewer, appelé depuis renderPosts() et
        renderComments()). -->
   <div class="comments-overlay" id="photo-viewer-overlay" onclick="closePhotoViewer()" style="align-items:center; justify-content:center;">
-    <img id="photo-viewer-img" src="" alt="" style="max-width:92vw; max-height:85vh; object-fit:contain; border-radius:10px; display:block;" onclick="event.stopPropagation()">
+    <img id="photo-viewer-img" src="" alt="" style="max-width:92vw; max-height:85vh; object-fit:contain; border-radius:10px; display:block; cursor:zoom-out;">
     <div class="icon-btn" onclick="closePhotoViewer()" style="position:absolute; top:36px; right:18px; background:rgba(255,255,255,0.18); color:#fff;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
   </div>
 
@@ -2111,7 +2112,7 @@ async function loadRemotePosts(){
   const nowIso = new Date().toISOString();
   const { data, error } = await sb
     .from('publications')
-    .select('*, confirmations(user_id), likes(user_id), comments(id, author_name, text, created_at)')
+    .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order('created_at', {ascending:false});
   if(error){ console.warn('Erreur chargement publications', error); return; }
@@ -2136,7 +2137,10 @@ async function loadRemotePosts(){
       likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
       sponsored: !!row.is_sponsored,
-      comments: commentRows.map(c => ({author: c.author_name || 'Testeur Zapy', text: c.text}))
+      // Qui a aimé (avatar/nom dénormalisés sur likes à l'insertion — voir
+      // toggleLike — car profiles n'est pas lisible pour un autre membre).
+      likers: likeRows.map(l => ({userId: l.user_id, name: l.author_name || 'Testeur Zapy', avatarUrl: l.author_avatar_url || null})),
+      comments: commentRows.map(c => ({authorId: c.author_id, author: c.author_name || 'Testeur Zapy', avatarUrl: c.author_avatar_url || null, text: c.text}))
     };
   });
   renderPosts();
@@ -2287,7 +2291,7 @@ async function toggleLike(id){
     remote.likes += remote.liked ? 1 : -1;
     renderPosts();
     if(remote.liked){
-      const { error } = await sb.from('likes').insert({publication_id: remote.id, user_id: currentUserId});
+      const { error } = await sb.from('likes').insert({publication_id: remote.id, user_id: currentUserId, author_name: myPseudo, author_avatar_url: myAvatarUrl || null});
       if(error && error.code !== '23505'){ remote.liked=false; remote.likes--; renderPosts(); return; }
     } else {
       await sb.from('likes').delete().eq('publication_id', remote.id).eq('user_id', currentUserId);
@@ -2545,18 +2549,33 @@ function renderComments(){
   const reportBtnHtml = canReportPub
     ? `<span onclick="openReportModal('publication','${p.id}')" style="color:#D32F2F; font-weight:700; font-size:11.5px; cursor:pointer;">🚩 Signaler</span>`
     : '';
+  // "Qui a aimé" : avatars empilés, cliquables vers le profil de chacun —
+  // voir likers sur remotePosts (dénormalisé sur likes, car profiles n'est
+  // pas lisible pour un autre membre — même raison que pour les commentaires).
+  const likersHtml = (p.likers && p.likers.length)
+    ? `<div style="display:flex; align-items:center; gap:7px; margin:12px 0 4px;">
+        <div style="display:flex;">${p.likers.slice(0,5).map((l,i) => `
+          <div onclick="event.stopPropagation(); openUserProfileFromLiker('${p.id}', ${i})" style="width:24px; height:24px; border-radius:50%; overflow:hidden; border:2px solid var(--bg); margin-left:${i>0?'-8px':'0'}; cursor:pointer; background:#78909C; display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:800;">${l.avatarUrl ? `<img src="${l.avatarUrl}" style="width:100%; height:100%; object-fit:cover; display:block;">` : (l.name||'?')[0].toUpperCase()}</div>`).join('')}</div>
+        <div style="font-size:12px; color:var(--muted);">${p.likers.length} j’aime</div>
+      </div>`
+    : '';
   document.getElementById('comments-list').innerHTML =
     `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; font-size:13px;">${authorHtml}${ownActionsHtml || reportBtnHtml}</div>`
     + `<div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">📍 ${p.place}${p.cat==='trafic' && p.urgency && !p.cleared ? ` · ⏱ ${DURATION_HINTS[p.urgency]||''}` : ''}</div>`
     + galleryHtml
     + `<div style="font-size:13.5px; color:var(--ink); line-height:1.4; margin-bottom:10px;">${p.text}</div>`
     + navHtml
+    + likersHtml
     + `<div style="font-size:11.5px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:0.3px; margin:14px 0 8px;">${p.commentCount} commentaire${p.commentCount>1?'s':''}</div>`
-    + shown.map(c => `
+    + shown.map((c,i) => {
+        const clickOnclick = c.authorId ? ` onclick="openUserProfileFromComment('${p.id}', ${i})"` : '';
+        const clickCursor = c.authorId ? 'cursor:pointer;' : '';
+        return `
       <div class="comment-row">
-        <div class="avatar" style="background:#78909C; flex-shrink:0;">${c.author[0]}</div>
-        <div><div class="comment-author">${c.author}</div><div class="comment-text">${c.text}</div></div>
-      </div>`).join('')
+        <div class="avatar" style="background:#78909C; flex-shrink:0; overflow:hidden; ${clickCursor}"${clickOnclick}>${c.avatarUrl ? `<img src="${c.avatarUrl}" style="width:100%; height:100%; object-fit:cover; display:block;">` : c.author[0]}</div>
+        <div><div class="comment-author" style="${clickCursor}"${clickOnclick}>${c.author}</div><div class="comment-text">${c.text}</div></div>
+      </div>`;
+      }).join('')
     + (extra>0 ? `<div style="text-align:center; padding:10px 0; font-size:11.5px; color:var(--muted);">et ${extra} autres commentaires</div>` : '');
 }
 async function submitComment(e){
@@ -2567,7 +2586,7 @@ async function submitComment(e){
   const remote = remotePosts.find(x=>String(x.id)===String(openPostId));
   input.value = '';
   if(remote && sb && currentUserId){
-    const { error } = await sb.from('comments').insert({publication_id: remote.id, author_id: currentUserId, author_name: myPseudo, text});
+    const { error } = await sb.from('comments').insert({publication_id: remote.id, author_id: currentUserId, author_name: myPseudo, author_avatar_url: myAvatarUrl || null, text});
     if(error){ console.warn('Commentaire échoué', error); toast('Erreur, réessaie'); return; }
     await loadRemotePosts();
     return;
@@ -3658,6 +3677,23 @@ function openUserProfileFromPost(id){
   if(!p) return;
   openUserProfile(p.authorId, p.name, p.avatarUrl);
 }
+// Mêmes points d'entrée que openUserProfileFromPost, mais depuis un
+// commentaire ou un "j'aime" (voir renderComments) : on retrouve l'auteur via
+// son index dans comments/likers plutôt que d'injecter son nom dans
+// l'attribut onclick (évite tout souci d'échappement s'il contient des
+// apostrophes ou des guillemets).
+function openUserProfileFromComment(pubId, idx){
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(pubId));
+  const c = p && p.comments && p.comments[idx];
+  if(!c || !c.authorId) return;
+  openUserProfile(c.authorId, c.author, c.avatarUrl);
+}
+function openUserProfileFromLiker(pubId, idx){
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(pubId));
+  const l = p && p.likers && p.likers[idx];
+  if(!l || !l.userId) return;
+  openUserProfile(l.userId, l.name, l.avatarUrl);
+}
 function openUserProfile(authorId, authorName, authorAvatarUrl){
   // Une publication locale (jamais partagée via Supabase) n'a pas d'auteur
   // identifié : pas de profil consultable dans ce cas.
@@ -3676,7 +3712,30 @@ function openUserProfile(authorId, authorName, authorAvatarUrl){
     : 'Pas encore classé';
   const isMe = authorId === currentUserId;
   document.getElementById('up-report-btn').style.display = (!isMe && isActiveMember(currentUserId)) ? 'block' : 'none';
+  renderUserRecentShares(authorId);
   showScreen('user-profile');
+}
+// Ce que ce membre a partagé dans les dernières 24h, visible depuis son
+// profil (ouvert via sa photo sur une publication, un commentaire ou un
+// "j'aime"). Ne regarde que remotePosts : seules les vraies publications
+// Supabase portent un authorId et un createdAt fiables.
+function renderUserRecentShares(authorId){
+  const el = document.getElementById('up-recent-shares');
+  if(!el) return;
+  const cutoff = Date.now() - 24*60*60*1000;
+  const recent = remotePosts.filter(p => p.authorId === authorId && new Date(p.createdAt).getTime() >= cutoff);
+  if(recent.length === 0){
+    el.innerHTML = '<div style="font-size:12.5px; color:#90A4AE; padding:4px 0 10px;">Rien de partagé dans les dernières 24h.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="section-tag" style="margin:0 0 6px; padding:0;">Partagé dans les dernières 24h</div>`
+    + recent.map(p => `
+      <div class="post-card" style="cursor:pointer;" onclick="showScreen(userProfileReturnScreen); openComments('${p.id}')">
+        <div class="post-main">
+          <div class="post-title">${p.title}</div>
+          <div class="post-text">📍 ${p.place} · ${p.time}</div>
+        </div>
+      </div>`).join('');
 }
 
 /* ---- Signalement (publication ou membre) ----
