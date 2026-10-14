@@ -1625,6 +1625,27 @@ svg.leaflet-image-layer.leaflet-interactive path {
     </div>
   </div>
 
+  <!-- Modification d'un partage météo ou photo de rando, propriétaire
+       uniquement — même principe que "Modifier la publication" ci-dessus,
+       mutualisé entre les deux car ils ne diffèrent que par le champ lieu
+       (commune vs sentier) et la liste d'émojis (voir openEditReportModal
+       / submitEditReport). -->
+  <div class="comments-overlay" id="report-edit-overlay" onclick="if(event.target===this) closeEditReportModal()">
+    <div class="comments-sheet" style="max-height:60%;">
+      <div class="comments-head">
+        <span id="rep-edit-title">Modifier</span>
+        <div class="icon-btn" onclick="closeEditReportModal()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+      </div>
+      <div style="padding:14px 18px; overflow-y:auto;">
+        <div class="field-label" id="rep-edit-place-label">Lieu</div>
+        <select id="rep-edit-place" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin:6px 0 12px;"></select>
+        <div class="field-label">Condition</div>
+        <div class="wx-cond-row" id="rep-edit-cond-row" style="margin-top:6px;"></div>
+        <button type="button" class="submit-btn" style="margin-top:14px; width:100%;" onclick="submitEditReport()">Enregistrer les modifications</button>
+      </div>
+    </div>
+  </div>
+
   <div class="comments-overlay" id="publish-confirm-overlay" onclick="if(event.target===this) closePublishConfirm()">
     <div class="comments-sheet" style="max-height:66%;">
       <div class="comments-head">
@@ -3057,7 +3078,7 @@ async function loadRemoteWxReports(){
   if(!sb) return;
   const { data, error } = await sb.from('weather_reports').select('*').order('created_at', {ascending:false}).limit(30);
   if(error){ console.warn('Erreur météo communauté', error); return; }
-  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji}));
+  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji, authorId:r.author_id}));
   renderWxReports();
 }
 
@@ -3108,7 +3129,7 @@ async function publishWxReport(){
     if(error){ console.warn('Météo partagée échouée', error); toast('Erreur, réessaie'); return; }
     await loadRemoteWxReports();
   } else {
-    WEATHER_REPORTS.unshift({id: nextWxId++, photo: pendingWxPhoto, place: commune, time:'À l’instant', emoji: selectedWxCondition});
+    WEATHER_REPORTS.unshift({id: nextWxId++, photo: pendingWxPhoto, place: commune, time:'À l’instant', emoji: selectedWxCondition, mine:true});
     renderWxReports();
   }
   toggleWxForm();
@@ -3118,6 +3139,89 @@ async function publishWxReport(){
   removeWxPhoto();
   toast('Météo partagée, merci !');
 }
+
+/* Modifier / supprimer un partage météo ou photo de rando — réservé à son
+   auteur, même esprit que Modifier/Supprimer sur une publication (voir
+   openEditModal / deletePublication). Mutualisé entre les deux types via
+   le paramètre type ('wx' | 'hike'), qui ne change que la table Supabase,
+   le nom de colonne du lieu et la liste d'émojis proposée. */
+function ownReportActionsHtml(r, type){
+  const isMine = r.mine || (r.authorId && r.authorId === currentUserId);
+  if(!isMine) return '';
+  return `<div style="position:absolute; top:6px; left:6px; display:flex; gap:5px; z-index:2;">
+      <div onclick="event.stopPropagation(); openEditReportModal('${type}','${r.id}')" style="width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:11px;">✏️</div>
+      <div onclick="event.stopPropagation(); deleteReport('${type}','${r.id}')" style="width:22px; height:22px; border-radius:50%; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:11px;">🗑️</div>
+    </div>`;
+}
+let editingReportType = null;
+let editingReportId = null;
+let editingReportCondition = null;
+function openEditReportModal(type, id){
+  const list = type === 'wx' ? [...remoteWxReports, ...WEATHER_REPORTS] : [...remoteHikeReports, ...HIKE_REPORTS];
+  const r = list.find(x => String(x.id) === String(id));
+  if(!r) return;
+  editingReportType = type;
+  editingReportId = id;
+  editingReportCondition = r.emoji;
+  document.getElementById('rep-edit-title').textContent = type === 'wx' ? 'Modifier ma météo' : 'Modifier ma photo de rando';
+  document.getElementById('rep-edit-place-label').textContent = type === 'wx' ? 'Commune' : 'Sentier';
+  const opts = type === 'wx' ? COMMUNES : getAllTrails().map(t => t.name);
+  document.getElementById('rep-edit-place').innerHTML = opts.map(o => `<option value="${o}" ${o===r.place?'selected':''}>${o}</option>`).join('');
+  renderEditReportConditionPicker();
+  document.getElementById('report-edit-overlay').classList.add('show');
+}
+function renderEditReportConditionPicker(){
+  const conds = editingReportType === 'wx' ? WX_CONDITIONS : HIKE_CONDITIONS;
+  document.getElementById('rep-edit-cond-row').innerHTML = conds.map(c => `
+    <div class="wx-cond-opt ${editingReportCondition===c?'selected':''}" onclick="editingReportCondition='${c}'; renderEditReportConditionPicker();">${c}</div>`).join('');
+}
+function closeEditReportModal(){
+  document.getElementById('report-edit-overlay').classList.remove('show');
+  editingReportType = null;
+  editingReportId = null;
+}
+async function submitEditReport(){
+  const place = document.getElementById('rep-edit-place').value;
+  if(!place){ toast('Choisis un lieu'); return; }
+  const type = editingReportType, id = editingReportId;
+  const table = type === 'wx' ? 'weather_reports' : 'hike_reports';
+  const placeCol = type === 'wx' ? 'commune' : 'trail_name';
+  const remoteList = type === 'wx' ? remoteWxReports : remoteHikeReports;
+  const remote = remoteList.find(x => String(x.id) === String(id));
+  if(remote && sb && currentUserId){
+    const { error } = await sb.from(table)
+      .update({ [placeCol]: place, emoji: editingReportCondition })
+      .eq('id', id).eq('author_id', currentUserId);
+    if(error){ console.warn('Modification échouée', error); toast('Erreur, réessaie'); return; }
+    if(type === 'wx') await loadRemoteWxReports(); else await loadRemoteHikeReports();
+  } else {
+    const localList = type === 'wx' ? WEATHER_REPORTS : HIKE_REPORTS;
+    const local = localList.find(x => String(x.id) === String(id));
+    if(local){ local.place = place; local.emoji = editingReportCondition; }
+    if(type === 'wx') renderWxReports(); else renderHikeReports();
+  }
+  closeEditReportModal();
+  toast('Modifié avec succès');
+}
+function deleteReport(type, id){
+  if(!confirm('Supprimer définitivement ce partage ? Cette action est irréversible.')) return;
+  doDeleteReport(type, id);
+}
+async function doDeleteReport(type, id){
+  const table = type === 'wx' ? 'weather_reports' : 'hike_reports';
+  const remoteList = type === 'wx' ? remoteWxReports : remoteHikeReports;
+  const remote = remoteList.find(x => String(x.id) === String(id));
+  if(remote && sb && currentUserId){
+    const { error } = await sb.from(table).delete().eq('id', id).eq('author_id', currentUserId);
+    if(error){ console.warn('Suppression échouée', error); toast('Erreur, réessaie'); return; }
+    if(type === 'wx') await loadRemoteWxReports(); else await loadRemoteHikeReports();
+  } else {
+    if(type === 'wx'){ WEATHER_REPORTS = WEATHER_REPORTS.filter(x => String(x.id) !== String(id)); renderWxReports(); }
+    else { HIKE_REPORTS = HIKE_REPORTS.filter(x => String(x.id) !== String(id)); renderHikeReports(); }
+  }
+  toast('Supprimé');
+}
+
 function renderWxReports(){
   const el = document.getElementById('wx-reports');
   if(!el) return;
@@ -3129,6 +3233,7 @@ function renderWxReports(){
   el.innerHTML = combined.map(r => `
     <div class="wx-report-card">
       <img src="${r.photo}" alt="">
+      ${ownReportActionsHtml(r, 'wx')}
       <div class="wx-report-emoji">${r.emoji}</div>
       <div class="wx-report-info">
         <div class="wx-report-place">${r.place}</div>
@@ -3243,7 +3348,7 @@ async function loadRemoteHikeReports(){
   if(!sb) return;
   const { data, error } = await sb.from('hike_reports').select('*').order('created_at', {ascending:false}).limit(30);
   if(error){ console.warn('Erreur rando communauté', error); return; }
-  remoteHikeReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.trail_name, time:timeAgo(r.created_at), emoji:r.emoji}));
+  remoteHikeReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.trail_name, time:timeAgo(r.created_at), emoji:r.emoji, authorId:r.author_id}));
   renderHikeReports();
 }
 
@@ -3293,7 +3398,7 @@ async function publishHikeReport(){
     if(error){ console.warn('Photo rando échouée', error); toast('Erreur, réessaie'); return; }
     await loadRemoteHikeReports();
   } else {
-    HIKE_REPORTS.unshift({id: nextHikeId++, photo: pendingHikePhoto, place: trail, time:'À l’instant', emoji: selectedHikeCondition});
+    HIKE_REPORTS.unshift({id: nextHikeId++, photo: pendingHikePhoto, place: trail, time:'À l’instant', emoji: selectedHikeCondition, mine:true});
     renderHikeReports();
   }
   toggleHikeForm();
@@ -3313,6 +3418,7 @@ function renderHikeReports(){
   el.innerHTML = combined.map(r => `
     <div class="wx-report-card">
       <img src="${r.photo}" alt="">
+      ${ownReportActionsHtml(r, 'hike')}
       <div class="wx-report-emoji">${r.emoji}</div>
       <div class="wx-report-info">
         <div class="wx-report-place">${r.place}</div>
