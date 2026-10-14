@@ -4554,19 +4554,48 @@ async function renderAdmin(){
       </div>
     </div>`).join('');
 
-  document.getElementById('admin-count').textContent = posts.length + ' publication' + (posts.length>1?'s':'') + ' active' + (posts.length>1?'s':'');
+  await loadAdminPublications();
   const cat = id => CATEGORIES.find(c=>c.id===id);
-  document.getElementById('admin-list').innerHTML = posts.map(p => `
+  document.getElementById('admin-count').textContent = adminPublications.length + ' publication' + (adminPublications.length>1?'s':'') + ' (toutes, y compris expirées)';
+  document.getElementById('admin-list').innerHTML = adminPublications.map(p => `
     <div class="admin-row">
       <div class="admin-main">
-        <div class="admin-title">${p.title}</div>
-        <div class="admin-meta">${p.name} · ${cat(p.cat)? cat(p.cat).label : p.cat} · ${p.place}</div>
+        <div class="admin-title">${p.title}${p.expired ? ' <span style="color:var(--muted); font-weight:700; font-size:11px;">· expirée</span>' : ''}</div>
+        <div class="admin-meta">${p.authorName} · ${cat(p.cat)? cat(p.cat).label : p.cat} · ${p.place}</div>
       </div>
       <div class="admin-actions">
-        <div class="admin-btn" onclick="toast('Détail — à venir')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink)" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div>
-        <div class="admin-btn danger" onclick="adminRemove(${p.id})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
+        <div class="admin-btn danger" onclick="adminRemovePublication('${p.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#E5484D" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
       </div>
     </div>`).join('');
+}
+/* Modération réelle : la liste ci-dessus montrait "posts" (données de démo),
+   jamais les vraies publications des membres — un admin ne pouvait donc
+   rien supprimer de réel. adminPublications charge TOUTES les publications
+   (actives ou expirées) via la policy RLS publications_delete_admin /
+   publications_read_own_or_admin, sans le filtre expires_at appliqué dans
+   loadRemotePosts() qui cache les publications expirées au fil normal. */
+let adminPublications = [];
+async function loadAdminPublications(){
+  adminPublications = [];
+  if(!sb || !amIAdmin) return;
+  const { data, error } = await sb.from('publications').select('*').order('created_at', {ascending:false});
+  if(error){ console.warn('Erreur chargement publications (admin)', error); return; }
+  const nowMs = Date.now();
+  adminPublications = (data||[]).map(row => ({
+    id: row.id, title: row.title, authorName: row.author_name || 'Testeur Zapy',
+    cat: row.category_id, place: row.commune || '—',
+    expired: !!(row.expires_at && new Date(row.expires_at).getTime() <= nowMs),
+  }));
+}
+async function adminRemovePublication(id){
+  if(!sb || !amIAdmin) return;
+  if(!confirm('Supprimer définitivement cette publication ? Cette action est irréversible.')) return;
+  const { error } = await sb.from('publications').delete().eq('id', id);
+  if(error){ console.warn('Erreur suppression publication (admin)', error); toast('Erreur, réessaie'); return; }
+  toast('Publication supprimée');
+  await loadAdminPublications();
+  await loadRemotePosts();
+  renderAdmin();
 }
 function toggleBlockUser(id){
   const u = adminUsersList.find(x=>x.id===id);
@@ -4574,14 +4603,6 @@ function toggleBlockUser(id){
   renderAdmin();
   toast(u.blocked ? u.name + ' a été bloqué' : u.name + ' a été débloqué');
 }
-function adminRemove(id){
-  posts = posts.filter(p=>p.id!==id);
-  renderAdmin();
-  renderPosts();
-  renderProfile();
-  toast('Publication supprimée');
-}
-
 let toastTimer;
 function toast(msg){
   const el = document.getElementById('toast');
