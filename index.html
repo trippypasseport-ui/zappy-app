@@ -239,12 +239,13 @@
   .comments-overlay.show{background:rgba(8,14,21,0.5); pointer-events:auto;}
   #photo-viewer-overlay.show{background:rgba(5,8,12,0.95);}
   /* Contrairement à .comments-sheet (translatée hors écran quand fermée),
-     l'image de la visionneuse n'avait rien pour la cacher : seul le fond de
-     l'overlay disparaissait, donc une miniature de la photo restait visible
-     par-dessus l'écran du dessous tant que closePhotoViewer() n'avait pas
-     (en plus) vidé le src — voir closePhotoViewer(). */
-  #photo-viewer-img{opacity:0; pointer-events:none; transition:opacity .2s;}
-  #photo-viewer-overlay.show #photo-viewer-img{opacity:1; pointer-events:auto;}
+     le contenu de la visionneuse (photo + bouton fermer ✕) n'avait rien
+     pour le cacher : seul le fond de l'overlay disparaissait, donc la photo
+     ET le bouton ✕ restaient visibles par-dessus l'écran du dessous. On
+     masque maintenant tout l'overlay (visibility, pas juste son fond) tant
+     qu'il n'est pas ouvert. */
+  #photo-viewer-overlay{visibility:hidden;}
+  #photo-viewer-overlay.show{visibility:visible;}
   /* La carte plein écran doit masquer totalement la mini-carte de l'écran Carte
      derrière elle (sinon le fond semi-transparent laisse deviner une 2e carte) */
   #map-overlay.show{background:var(--bg-page);}
