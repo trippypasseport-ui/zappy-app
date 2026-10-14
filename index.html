@@ -3105,8 +3105,43 @@ async function loadRemoteWxReports(){
   if(!sb) return;
   const { data, error } = await sb.from('weather_reports').select('*').order('created_at', {ascending:false}).limit(30);
   if(error){ console.warn('Erreur météo communauté', error); return; }
-  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji, authorId:r.author_id}));
+  // Confirmations ("toujours exact ?") : une seconde requête groupée plutôt
+  // qu'une jointure, pour rester simple — un partage météo change rarement
+  // de statut, 30 lignes max à chaque rafraîchissement.
+  const ids = (data||[]).map(r => r.id);
+  const confirmCounts = {};
+  const myConfirmed = new Set();
+  if(ids.length){
+    const { data: confirms } = await sb.from('weather_confirmations').select('weather_report_id,user_id').in('weather_report_id', ids);
+    (confirms||[]).forEach(c => {
+      confirmCounts[c.weather_report_id] = (confirmCounts[c.weather_report_id]||0) + 1;
+      if(c.user_id === currentUserId) myConfirmed.add(c.weather_report_id);
+    });
+  }
+  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji, authorId:r.author_id, confirmCount:confirmCounts[r.id]||0, confirmedByMe:myConfirmed.has(r.id)}));
   renderWxReports();
+}
+/* Confirmer ("c'est toujours comme ça") ou retirer sa confirmation sur le
+   partage météo d'un autre membre — jamais sur le sien, implicitement déjà
+   garanti en le publiant. Même bascule insert/delete que toggleLike(). */
+async function toggleWxConfirm(id){
+  const remote = remoteWxReports.find(x => String(x.id) === String(id));
+  if(remote && sb && currentUserId){
+    if(remote.confirmedByMe){
+      await sb.from('weather_confirmations').delete().eq('weather_report_id', id).eq('user_id', currentUserId);
+    } else {
+      const { error } = await sb.from('weather_confirmations').insert({weather_report_id:id, user_id:currentUserId});
+      if(error && error.code !== '23505'){ console.warn('Confirmation météo échouée', error); toast('Erreur, réessaie'); return; }
+    }
+    await loadRemoteWxReports();
+  } else {
+    const local = WEATHER_REPORTS.find(x => String(x.id) === String(id));
+    if(local){
+      local.confirmedByMe = !local.confirmedByMe;
+      local.confirmCount = (local.confirmCount||0) + (local.confirmedByMe ? 1 : -1);
+      renderWxReports();
+    }
+  }
 }
 
 function toggleWxForm(){
@@ -3257,16 +3292,23 @@ function renderWxReports(){
     el.innerHTML = '<div style="grid-column:1/-1; text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Personne n’a encore partagé sa météo.</div>';
     return;
   }
-  el.innerHTML = combined.map(r => `
+  el.innerHTML = combined.map(r => {
+    const isMine = r.mine || (r.authorId && r.authorId === currentUserId);
+    const confirmHtml = !isMine
+      ? `<div onclick="event.stopPropagation(); toggleWxConfirm('${r.id}')" style="position:absolute; bottom:38px; right:7px; z-index:2; display:flex; align-items:center; gap:3px; background:${r.confirmedByMe ? '#2E9E5B' : 'rgba(0,0,0,0.55)'}; color:#fff; border-radius:20px; padding:3px 8px; font-size:10.5px; font-weight:800; cursor:pointer;">✓ ${r.confirmCount||0}</div>`
+      : '';
+    return `
     <div class="wx-report-card">
       <img src="${r.photo}" alt="">
       ${ownReportActionsHtml(r, 'wx')}
       <div class="wx-report-emoji">${r.emoji}</div>
+      ${confirmHtml}
       <div class="wx-report-info">
         <div class="wx-report-place">${r.place}</div>
         <div class="wx-report-time">${r.time}</div>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 /* ---- Randonnée ---- */
