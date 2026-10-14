@@ -3107,7 +3107,40 @@ const MAX_CATALOG_PHOTOS = 6;
 let pendingPhotos = [];
 let pendingPhoto = null;
 function syncPendingPhoto(){ pendingPhoto = pendingPhotos[0] || null; }
-function handlePhoto(e){
+/* Compresse une image côté client avant de la stocker en base64 : sans ça,
+   une photo de téléphone (souvent 3 à 12 Mo) est enregistrée telle quelle
+   dans la base, et dès qu'elle est dupliquée (likes, commentaires, photo de
+   profil recopiée sur chaque like...) ça fait exploser la taille des
+   requêtes jusqu'à les faire planter (timeout côté serveur). On redessine
+   l'image dans un <canvas> limité à maxDim de large/haut et on la
+   réexporte en JPEG compressé — maxDim=1280/qualité=0.75 pour les photos de
+   publication (encore nettes en plein écran), 480/0.8 pour les avatars
+   (toujours affichés en petit rond). */
+function compressImageFile(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if(width > maxDim || height > maxDim){
+          if(width >= height){ height = Math.round(height * (maxDim / width)); width = maxDim; }
+          else { width = Math.round(width * (maxDim / height)); height = maxDim; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('Image illisible'));
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => reject(new Error('Fichier illisible'));
+    reader.readAsDataURL(file);
+  });
+}
+async function handlePhoto(e){
   const files = Array.from(e.target.files || []);
   if(!files.length) return;
   const isCatalog = selectedCat === 'commerces';
@@ -3116,14 +3149,15 @@ function handlePhoto(e){
   const toRead = isCatalog ? files.slice(0, Math.max(0, MAX_CATALOG_PHOTOS - baseIndex)) : files.slice(0,1);
   if(toRead.length === 0){ toast('Catalogue déjà plein (' + MAX_CATALOG_PHOTOS + ' photos max)'); return; }
   let remaining = toRead.length;
-  toRead.forEach((file, i) => {
-    const reader = new FileReader();
-    reader.onload = function(ev){
-      pendingPhotos[baseIndex + i] = ev.target.result;
-      remaining--;
-      if(remaining === 0){ syncPendingPhoto(); renderPhotoZone(); }
-    };
-    reader.readAsDataURL(file);
+  toRead.forEach(async (file, i) => {
+    try{
+      pendingPhotos[baseIndex + i] = await compressImageFile(file, 1280, 0.75);
+    }catch(err){
+      console.warn('Erreur compression photo', err);
+      toast('Photo illisible, réessaie');
+    }
+    remaining--;
+    if(remaining === 0){ syncPendingPhoto(); renderPhotoZone(); }
   });
 }
 function removePhoto(index){
@@ -3669,21 +3703,23 @@ function renderWxConditionPicker(){
   document.getElementById('wx-cond-row').innerHTML = WX_CONDITIONS.map(c => `
     <div class="wx-cond-opt ${selectedWxCondition===c?'selected':''}" onclick="selectedWxCondition='${c}'; renderWxConditionPicker();">${c}</div>`).join('');
 }
-function handleWxPhoto(e){
+async function handleWxPhoto(e){
   const file = e.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev){
-    pendingWxPhoto = ev.target.result;
-    document.getElementById('wx-photo-zone').innerHTML = `
-      <div class="photo-preview">
-        <img src="${pendingWxPhoto}" alt="">
-        <div class="photo-remove" onclick="removeWxPhoto()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </div>
-      </div>`;
-  };
-  reader.readAsDataURL(file);
+  try{
+    pendingWxPhoto = await compressImageFile(file, 1280, 0.75); // voir compressImageFile()
+  }catch(err){
+    console.warn('Erreur compression photo météo', err);
+    toast('Photo illisible, réessaie');
+    return;
+  }
+  document.getElementById('wx-photo-zone').innerHTML = `
+    <div class="photo-preview">
+      <img src="${pendingWxPhoto}" alt="">
+      <div class="photo-remove" onclick="removeWxPhoto()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </div>
+    </div>`;
 }
 function removeWxPhoto(){
   pendingWxPhoto = null;
@@ -3959,21 +3995,23 @@ function renderHikeCondPicker(){
   document.getElementById('hike-cond-row').innerHTML = HIKE_CONDITIONS.map(c => `
     <div class="wx-cond-opt ${selectedHikeCondition===c?'selected':''}" onclick="selectedHikeCondition='${c}'; renderHikeCondPicker();">${c}</div>`).join('');
 }
-function handleHikePhoto(e){
+async function handleHikePhoto(e){
   const file = e.target.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev){
-    pendingHikePhoto = ev.target.result;
-    document.getElementById('hike-photo-zone').innerHTML = `
-      <div class="photo-preview">
-        <img src="${pendingHikePhoto}" alt="">
-        <div class="photo-remove" onclick="removeHikePhoto()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </div>
-      </div>`;
-  };
-  reader.readAsDataURL(file);
+  try{
+    pendingHikePhoto = await compressImageFile(file, 1280, 0.75); // voir compressImageFile()
+  }catch(err){
+    console.warn('Erreur compression photo randonnée', err);
+    toast('Photo illisible, réessaie');
+    return;
+  }
+  document.getElementById('hike-photo-zone').innerHTML = `
+    <div class="photo-preview">
+      <img src="${pendingHikePhoto}" alt="">
+      <div class="photo-remove" onclick="removeHikePhoto()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </div>
+    </div>`;
 }
 function removeHikePhoto(){
   pendingHikePhoto = null;
@@ -4145,22 +4183,25 @@ function renderProfile(){
    base64 côté client, stocké tel quel — pas de bucket Storage dans ce
    prototype), mais enregistré dans profiles.avatar_url pour être visible
    par tous les autres membres qui consultent ce profil. */
-function handleAvatarUpload(event){
+async function handleAvatarUpload(event){
   const file = event.target.files && event.target.files[0];
   event.target.value = '';
   if(!file) return;
   if(!file.type || !file.type.startsWith('image/')){ toast('Choisis une image'); return; }
-  const reader = new FileReader();
-  reader.onload = async (ev) => {
-    const dataUrl = ev.target.result;
-    if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
-    const { error } = await sb.from('profiles').update({ avatar_url: dataUrl }).eq('id', currentUserId);
-    if(error){ console.warn('Erreur photo de profil', error); toast('Erreur, réessaie'); return; }
-    myAvatarUrl = dataUrl;
-    renderProfile();
-    toast('Photo de profil mise à jour');
-  };
-  reader.readAsDataURL(file);
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie'); return; }
+  let dataUrl;
+  try{
+    dataUrl = await compressImageFile(file, 480, 0.8); // voir compressImageFile() : jamais affichée en grand, donc petite résolution
+  }catch(err){
+    console.warn('Erreur compression photo de profil', err);
+    toast('Photo illisible, réessaie');
+    return;
+  }
+  const { error } = await sb.from('profiles').update({ avatar_url: dataUrl }).eq('id', currentUserId);
+  if(error){ console.warn('Erreur photo de profil', error); toast('Erreur, réessaie'); return; }
+  myAvatarUrl = dataUrl;
+  renderProfile();
+  toast('Photo de profil mise à jour');
 }
 
 /* Suppression du compte : irréversible, demande une confirmation explicite
