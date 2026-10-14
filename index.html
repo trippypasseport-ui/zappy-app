@@ -2239,16 +2239,25 @@ async function initBackend(){
     const { data: myProfileRow } = await sb.from('profiles').select('avatar_url, created_at').eq('id', currentUserId).maybeSingle();
     myAvatarUrl = (myProfileRow && myProfileRow.avatar_url) || null;
     myMemberSince = (myProfileRow && myProfileRow.created_at) || null;
-    // Chargé avant loadRemotePosts() : le fil doit pouvoir mettre en avant
-    // les publications des artistes/membres suivis dès le premier rendu.
+    // myFollows doit être chargé avant loadRemotePosts() (le fil s'en sert
+    // pour mettre en avant les publications des membres suivis dès le
+    // premier rendu) — mais tout le reste est indépendant, donc chargé en
+    // parallèle plutôt qu'en série : c'est ce qui rendait l'ouverture de
+    // l'app de plus en plus lente à chaque fonctionnalité ajoutée, chaque
+    // "await" étant un aller-retour réseau attendu un par un.
     await loadMyFollows();
-    await loadFollowersList();
-    await loadMySocialLink();
-    await loadMyFavorites();
-    await loadRemotePosts();
-    await loadMyPlan();
     initDevicePush();
-    await loadNotifications();
+    await Promise.all([
+      loadRemotePosts(),
+      loadFollowersList(),
+      loadMySocialLink(),
+      loadMyFavorites(),
+      loadMyPlan(),
+      loadNotifications(),
+      loadRemoteWxReports(),
+      loadRemoteHikeReports(),
+      loadRemoteTrails(),
+    ]);
     sb.channel('public:notifications')
       .on('postgres_changes', {event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+currentUserId}, (payload) => {
         loadNotifications();
@@ -2280,9 +2289,6 @@ async function initBackend(){
     sb.channel('public:trails')
       .on('postgres_changes', {event:'*', schema:'public', table:'trails'}, () => { loadRemoteTrails(); })
       .subscribe();
-    await loadRemoteWxReports();
-    await loadRemoteHikeReports();
-    await loadRemoteTrails();
   }catch(e){ console.warn('Backend partagé indisponible, mode local uniquement', e); }
 }
 
