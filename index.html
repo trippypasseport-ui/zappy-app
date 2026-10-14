@@ -1294,7 +1294,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
       <div style="padding:4px 18px 0;">
         <button type="button" class="submit-btn" id="up-follow-btn" style="display:none; background:var(--orange); color:#fff;">+ Suivre</button>
-        <a href="#" target="_blank" rel="noopener" id="up-social-link" style="display:none; align-items:center; justify-content:center; gap:6px; margin-top:8px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">🔗 Voir son lien</a>
+        <a href="#" id="up-social-link" onclick="return openExternalLink(event, this.href);" style="display:none; align-items:center; justify-content:center; gap:6px; margin-top:8px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">🔗 Voir son lien</a>
       </div>
       <div style="padding:14px 18px 20px;">
         <button type="button" class="submit-btn" id="up-report-btn" style="display:none; background:#FFEBEE; color:#D32F2F;" onclick="openReportModal('user')">🚩 Signaler ce membre</button>
@@ -1439,12 +1439,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
       <div class="section-tag">Besoin d'aide sur l'app ?</div>
       <div class="menu-list" style="padding-bottom:20px;">
-        <a href="https://wa.me/33646266432?text=Bonjour%2C%20j%27ai%20une%20question%20sur%20l%27app%20Zapy" target="_blank" class="menu-row">
+        <a href="https://wa.me/33646266432?text=Bonjour%2C%20j%27ai%20une%20question%20sur%20l%27app%20Zapy" onclick="return openExternalLink(event, this.href);" class="menu-row">
           <div class="menu-ico" style="background:#25D366"><svg width="18" height="18" viewBox="0 0 24 24" fill="#fff" stroke="none"><path d="M17.5 14.4c-.3-.1-1.7-.8-1.9-.9-.3-.1-.5-.1-.7.1s-.8.9-.9 1.1-.3.2-.6.1c-.3-.1-1.2-.4-2.3-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6l.4-.5c.1-.1.2-.3.2-.4.1-.1 0-.3 0-.4S9.7 8 9.5 7.5c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.3c.1.2 1.6 2.5 3.9 3.5.5.2.9.4 1.3.5.5.2 1 .1 1.4.1.4-.1 1.3-.5 1.5-1s.2-.9.1-1c0-.1-.2-.2-.5-.3z"/><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.1-1.3A10 10 0 1 0 12 2z"/></svg></div>
           <div><div class="menu-label">Écrire sur WhatsApp</div><div class="menu-sub">Réponse rapide, pour une question urgente</div></div>
           <span style="color:var(--muted)">›</span>
         </a>
-        <a href="mailto:contact@nandemservice.com?subject=Question%20%E2%80%94%20app%20Zapy" target="_blank" class="menu-row">
+        <a href="mailto:contact@nandemservice.com?subject=Question%20%E2%80%94%20app%20Zapy" onclick="return openExternalLink(event, this.href);" class="menu-row">
           <div class="menu-ico" style="background:#4FC3F7"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></div>
           <div><div class="menu-label">Envoyer un email</div><div class="menu-sub">contact@nandemservice.com</div></div>
           <span style="color:var(--muted)">›</span>
@@ -2652,6 +2652,21 @@ function buildRemoteMapPins(){
     .filter(Boolean);
 }
 
+/* Ouvre un lien externe (Waze, Maps, WhatsApp, email, lien d'un membre...).
+   En mode normal (navigateur), un simple <a target="_blank"> suffit. Mais
+   une fois l'app installée en PWA sur l'écran d'accueil (iOS surtout), le
+   mode "standalone" n'a pas d'onglets : target="_blank" ne fait alors
+   strictement RIEN au clic, le lien semble mort. window.open() appelé ici,
+   de façon synchrone dans le gestionnaire de clic (geste utilisateur direct,
+   pas après un await), reste lui capable de faire sortir vers Safari/l'app
+   correspondante même en mode standalone — c'est le contournement reconnu
+   pour ce problème. */
+function openExternalLink(e, url){
+  if(e) e.preventDefault();
+  if(!url || url === '#') return false;
+  window.open(url, '_blank');
+  return false;
+}
 /* Boutons "s'y rendre" (Waze / Google Maps) — ouvrent l'app installée sur le
    téléphone si elle existe, sinon la version web, avec la destination déjà
    renseignée. Réutilisé pour un pin de carte et pour une publication du fil. */
@@ -2660,8 +2675,8 @@ function navLinksHtml(lat, lng){
   const wazeUrl = `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
   const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
   return `<div style="display:flex; gap:8px; margin:4px 0 2px;">
-    <a href="${wazeUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">🧭 Waze</a>
-    <a href="${mapsUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">📍 Maps</a>
+    <a href="${wazeUrl}" onclick="event.stopPropagation(); return openExternalLink(event, '${wazeUrl}');" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">🧭 Waze</a>
+    <a href="${mapsUrl}" onclick="event.stopPropagation(); return openExternalLink(event, '${mapsUrl}');" style="flex:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px; border-radius:12px; background:#E3F0FF; color:#1565C0; font-size:12.5px; font-weight:800; text-decoration:none;">📍 Maps</a>
   </div>`;
 }
 function pinInfo(e, index){
