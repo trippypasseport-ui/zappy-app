@@ -2306,10 +2306,10 @@ async function initBackend(){
         showDeviceNotification(payload.new);
       })
       .on('postgres_changes', {event:'*', schema:'public', table:'merchant_subscriptions', filter:'user_id=eq.'+currentUserId}, () => { loadMyPlan(); })
-      .on('postgres_changes', {event:'*', schema:'public', table:'publications'}, () => { loadRemotePosts(); })
-      .on('postgres_changes', {event:'*', schema:'public', table:'confirmations'}, () => { loadRemotePosts(); })
-      .on('postgres_changes', {event:'*', schema:'public', table:'likes'}, () => { loadRemotePosts(); })
-      .on('postgres_changes', {event:'*', schema:'public', table:'comments'}, () => { loadRemotePosts(); })
+      .on('postgres_changes', {event:'*', schema:'public', table:'publications'}, () => { scheduleReloadPosts(); })
+      .on('postgres_changes', {event:'*', schema:'public', table:'confirmations'}, () => { scheduleReloadPosts(); })
+      .on('postgres_changes', {event:'*', schema:'public', table:'likes'}, () => { scheduleReloadPosts(); })
+      .on('postgres_changes', {event:'*', schema:'public', table:'comments'}, () => { scheduleReloadPosts(); })
       .on('postgres_changes', {event:'*', schema:'public', table:'weather_reports'}, () => { loadRemoteWxReports(); })
       .on('postgres_changes', {event:'*', schema:'public', table:'hike_reports'}, () => { loadRemoteHikeReports(); })
       .on('postgres_changes', {event:'*', schema:'public', table:'trails'}, () => { loadRemoteTrails(); })
@@ -2317,6 +2317,20 @@ async function initBackend(){
   }catch(e){ console.warn('Backend partagé indisponible, mode local uniquement', e); }
 }
 
+// Le fil se recharge en entier (photos comprises) à chaque like/commentaire/
+// confirmation/publication reçu en temps réel — avec plusieurs testeurs
+// actifs en même temps, une rafale de likes/commentaires proches dans le
+// temps déclenchait AUTANT de rechargements complets en parallèle chez
+// CHAQUE appareil connecté, ce qui pouvait saturer la base quelques
+// secondes (d'où des "statement timeout" ponctuels côté serveur — voir
+// l'incident du 14/10). scheduleReloadPosts() regroupe les événements
+// rapprochés en un seul rechargement 900ms après le dernier, au lieu d'un
+// rechargement par événement.
+let reloadPostsTimer = null;
+function scheduleReloadPosts(){
+  clearTimeout(reloadPostsTimer);
+  reloadPostsTimer = setTimeout(() => { loadRemotePosts(); }, 900);
+}
 async function loadRemotePosts(){
   if(!sb){ feedLoading = false; renderPosts(); return; }
   // Une publication avec une date de fin dépassée (expires_at) ne doit plus
@@ -2328,7 +2342,19 @@ async function loadRemotePosts(){
     .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order('created_at', {ascending:false});
-  if(error){ console.warn('Erreur chargement publications', error); feedLoading = false; renderPosts(); return; }
+  if(error){
+    // Une erreur réseau/serveur ponctuelle (ex. timeout momentané pendant un
+    // pic d'activité) ne doit JAMAIS effacer ce qui était déjà affiché — on
+    // laisse le fil (cache ou dernier chargement réussi) tel quel plutôt que
+    // de basculer sur "Rien pour l'instant", qui donnerait l'impression
+    // trompeuse que les publications ont disparu. On réessaie une fois,
+    // automatiquement, 3s plus tard.
+    console.warn('Erreur chargement publications, nouvelle tentative dans 3s', error);
+    feedLoading = false;
+    if(remotePosts.length===0 && posts.length===0) renderPosts();
+    setTimeout(() => { loadRemotePosts(); }, 3000);
+    return;
+  }
   // L'extrait audio vit dans sa propre table (publication_audio), jamais
   // chargé ici : un extrait de 30s pèse ~1,7 Mo, et l'embarquer dans CE
   // select (rechargé à chaque like/commentaire/nouvelle publication, et
