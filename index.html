@@ -3017,6 +3017,10 @@ async function actuallyPublish(){
 }
 
 function showScreen(name){
+  // La visionneuse photo plein écran (voir openPhotoViewer) est un calque
+  // indépendant des écrans : sans ce garde, changer d'écran pendant qu'elle
+  // est ouverte la laissait flotter au-dessus du nouvel écran.
+  closePhotoViewer();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active', b.dataset.nav===name || (b.dataset.nav==='profil' && ['commercant','artiste','admin','admin-lock','notifications'].includes(name))));
