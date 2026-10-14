@@ -273,6 +273,10 @@
 
   /* ---- Notifications ---- */
   .notif-row{display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 14px;}
+  .notif-row.unread{background:#FFF4E5;}
+  body[data-theme="dark"] .notif-row.unread{background:#2A2112;}
+  .notif-tab{flex:1; text-align:center; padding:10px; border-radius:12px; background:var(--surface); border:1px solid var(--line); font-size:12.5px; font-weight:800; color:var(--muted); cursor:pointer;}
+  .notif-tab.active{background:var(--orange); border-color:var(--orange); color:#fff;}
   a.menu-row{color:inherit; text-decoration:none;}
 
   /* ---- Accès rapide (Météo / Randonnée) ---- */
@@ -1445,10 +1449,33 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="icon-btn" onclick="showScreen('profil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
         <div class="sub-title">Notifications</div>
       </div>
-      <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
-        Choisis les catégories pour lesquelles tu veux être notifié à proximité.
+      <div style="display:flex; gap:8px; padding:6px 18px 10px;">
+        <div class="notif-tab active" id="notif-tab-activite" onclick="switchNotifTab('activite')">Activité</div>
+        <div class="notif-tab" id="notif-tab-prefs" onclick="switchNotifTab('prefs')">Préférences</div>
       </div>
-      <div class="menu-list" id="notif-list" style="padding-top:12px; padding-bottom:20px;"></div>
+
+      <div id="notif-tab-content-activite">
+        <div style="padding:0 18px 10px; display:flex; justify-content:flex-end;">
+          <span onclick="markAllNotificationsRead()" style="font-size:12px; color:#1565C0; font-weight:700; cursor:pointer;">Tout marquer comme lu</span>
+        </div>
+        <div class="menu-list" id="notif-feed" style="padding-bottom:20px;"></div>
+      </div>
+
+      <div id="notif-tab-content-prefs" style="display:none;">
+        <div style="padding:4px 18px 4px; font-size:12.5px; color:var(--muted); line-height:1.4;">
+          Choisis les catégories pour lesquelles tu veux être notifié à proximité.
+        </div>
+        <div class="menu-list" id="notif-list" style="padding-top:12px; padding-bottom:14px;"></div>
+
+        <div class="section-tag">Sur cet appareil</div>
+        <div class="menu-list" style="padding-bottom:20px;">
+          <div class="menu-row" onclick="toggleDeviceNotifications()">
+            <div class="menu-ico" style="background:#FF8A00"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+            <div><div class="menu-label">Notifications de cet appareil</div><div class="menu-sub">Reçois une alerte même sans avoir l'app au premier plan</div></div>
+            <div class="switch" id="device-notif-switch"><div class="knob"></div></div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- AIDE & SUPPORT -->
@@ -1839,32 +1866,98 @@ let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appa
 let myFollows = new Set();  // ids des membres/artistes que CET utilisateur suit (voir toggleFollow)
 let mySocialLink = null;    // lien externe (Instagram, Spotify...) de CET utilisateur (voir profile_links)
 
-/* ---- Pastille de notification (cloche) ----
-   N'apparaît que s'il existe une publication (d'un autre membre) postée
-   après la dernière fois que CET appareil a consulté la cloche — jamais en
-   permanence. "Dernière consultation" est mémorisée en local (localStorage)
-   et initialisée au premier lancement pour ne pas allumer la pastille sur
-   tout l'historique existant dès la toute première ouverture de l'app. */
-let lastSeenPublicationsAt = null;
-try{ lastSeenPublicationsAt = localStorage.getItem('zapy_last_seen_pubs'); }catch(e){}
-if(!lastSeenPublicationsAt){
-  lastSeenPublicationsAt = new Date().toISOString();
-  try{ localStorage.setItem('zapy_last_seen_pubs', lastSeenPublicationsAt); }catch(e){}
+/* ---- Notifications (commentaire/j'aime reçu, nouvel abonné) ----
+   Alimentées côté serveur par des triggers (notify_on_comment/like/follow),
+   pas par le client — voir la table notifications. Avant, la cloche ne
+   faisait qu'indiquer "il y a du nouveau dans le fil" ; elle reflète
+   maintenant de vraies notifications personnelles non lues. */
+let notifications = [];
+async function loadNotifications(){
+  notifications = [];
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('notifications').select('*').eq('user_id', currentUserId).order('created_at', {ascending:false}).limit(40);
+  if(error){ console.warn('Erreur chargement notifications', error); return; }
+  notifications = data || [];
+  updateBellDot();
+  renderNotifFeed();
 }
 function updateBellDot(){
   const dot = document.querySelector('.bell-dot');
   if(!dot) return;
-  const hasNew = remotePosts.some(p => p.authorId && p.authorId !== currentUserId && p.createdAt && new Date(p.createdAt) > new Date(lastSeenPublicationsAt));
-  dot.style.display = hasNew ? 'block' : 'none';
+  dot.style.display = notifications.some(n => !n.read) ? 'block' : 'none';
 }
 function openNotificationsBell(){
-  const dot = document.querySelector('.bell-dot');
-  const hadNew = dot && dot.style.display !== 'none';
-  const newCount = remotePosts.filter(p => p.authorId && p.authorId !== currentUserId && p.createdAt && new Date(p.createdAt) > new Date(lastSeenPublicationsAt)).length;
-  lastSeenPublicationsAt = new Date().toISOString();
-  try{ localStorage.setItem('zapy_last_seen_pubs', lastSeenPublicationsAt); }catch(e){}
+  showScreen('notifications');
+  switchNotifTab('activite');
+}
+function switchNotifTab(tab){
+  document.getElementById('notif-tab-activite').classList.toggle('active', tab==='activite');
+  document.getElementById('notif-tab-prefs').classList.toggle('active', tab==='prefs');
+  document.getElementById('notif-tab-content-activite').style.display = tab==='activite' ? 'block' : 'none';
+  document.getElementById('notif-tab-content-prefs').style.display = tab==='prefs' ? 'block' : 'none';
+}
+const NOTIF_ICON = {comment:'💬', like:'❤️', follow:'➕'};
+function renderNotifFeed(){
+  const el = document.getElementById('notif-feed');
+  if(!el) return;
+  if(notifications.length === 0){
+    el.innerHTML = '<div style="text-align:center; padding:30px 10px; color:var(--muted); font-size:13px;">Pas encore de notification.</div>';
+    return;
+  }
+  el.innerHTML = notifications.map(n => `
+    <div class="notif-row ${n.read?'':'unread'}" style="cursor:${n.publication_id?'pointer':'default'};" onclick="${n.publication_id ? `openNotifTarget('${n.publication_id}')` : ''}">
+      <div class="avatar" style="background:#78909C; flex-shrink:0; overflow:hidden;">${n.actor_avatar_url ? `<img src="${n.actor_avatar_url}" style="width:100%; height:100%; object-fit:cover; display:block;">` : NOTIF_ICON[n.type]}</div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:13px; color:var(--ink); line-height:1.35;">${n.message}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:2px;">${timeAgo(n.created_at)}</div>
+      </div>
+    </div>`).join('');
+}
+function openNotifTarget(publicationId){
+  showScreen('accueil');
+  openComments(publicationId);
+}
+async function markAllNotificationsRead(){
+  if(!sb || !currentUserId) return;
+  notifications.forEach(n => n.read = true);
+  renderNotifFeed();
   updateBellDot();
-  toast(hadNew ? newCount + ' nouvelle' + (newCount>1?'s':'') + ' publication' + (newCount>1?'s':'') + ' depuis ta dernière visite' : 'Pas de nouvelle notification pour l’instant');
+  await sb.from('notifications').update({ read: true }).eq('user_id', currentUserId).eq('read', false);
+}
+/* ---- Notifications "sur cet appareil" (API Notification du navigateur) ----
+   Affiche une vraie alerte quand une notification arrive en temps réel,
+   même si l'onglet n'est pas au premier plan — tant que le navigateur
+   tourne. Ce n'est PAS un push serveur façon FCM/APNs (qui réveillerait
+   l'app même navigateur fermé) : ça demanderait une infrastructure de push
+   dédiée (clé VAPID, abonnement par appareil, envoi côté serveur) hors
+   périmètre de ce prototype. */
+let devicePushEnabled = false;
+function initDevicePush(){
+  try{ devicePushEnabled = localStorage.getItem('zapy_push_enabled') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted'; }catch(e){ devicePushEnabled = false; }
+  const sw = document.getElementById('device-notif-switch');
+  if(sw) sw.classList.toggle('on', devicePushEnabled);
+}
+async function toggleDeviceNotifications(){
+  if(devicePushEnabled){
+    devicePushEnabled = false;
+    try{ localStorage.setItem('zapy_push_enabled', '0'); }catch(e){}
+    initDevicePush();
+    return;
+  }
+  if(typeof Notification === 'undefined' || !('serviceWorker' in navigator)){ toast('Non disponible sur cet appareil'); return; }
+  const perm = await Notification.requestPermission();
+  if(perm !== 'granted'){ toast('Autorisation refusée'); return; }
+  try{ await navigator.serviceWorker.register('./sw.js'); }catch(e){ console.warn('Erreur service worker', e); toast('Erreur, réessaie'); return; }
+  try{ localStorage.setItem('zapy_push_enabled', '1'); }catch(e){}
+  initDevicePush();
+  toast('Notifications activées sur cet appareil');
+}
+async function showDeviceNotification(n){
+  if(!devicePushEnabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification('Zapy', { body: n.message, icon: './assets/icon-192.png', badge: './assets/icon-192.png' });
+  }catch(e){ console.warn('Erreur affichage notification', e); }
 }
 
 function getPseudo(){
@@ -2135,6 +2228,14 @@ async function initBackend(){
     await loadMySocialLink();
     await loadRemotePosts();
     await loadMyPlan();
+    initDevicePush();
+    await loadNotifications();
+    sb.channel('public:notifications')
+      .on('postgres_changes', {event:'INSERT', schema:'public', table:'notifications', filter:'user_id=eq.'+currentUserId}, (payload) => {
+        loadNotifications();
+        showDeviceNotification(payload.new);
+      })
+      .subscribe();
     sb.channel('public:merchant_subscriptions')
       .on('postgres_changes', {event:'*', schema:'public', table:'merchant_subscriptions', filter:'user_id=eq.'+currentUserId}, () => { loadMyPlan(); })
       .subscribe();
@@ -3122,7 +3223,7 @@ function showScreen(name){
     if(linkInput) linkInput.value = mySocialLink || '';
   }
   if(name==='admin') renderAdmin();
-  if(name==='notifications') renderNotifPrefs();
+  if(name==='notifications'){ renderNotifPrefs(); initDevicePush(); loadNotifications(); }
   if(name==='support'){
     const ack = document.getElementById('support-ack');
     if(ack) ack.style.display = 'none';
