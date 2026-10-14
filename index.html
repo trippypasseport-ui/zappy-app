@@ -3166,6 +3166,9 @@ async function handleAudio(e){
   }
 }
 
+let trimPreviewUrl = null;   // URL temporaire (blob:) du dernier aperçu généré — à révoquer avant d'en créer un nouveau
+let trimPreviewTimer = null; // anti-rebond : on ne régénère pas l'aperçu à chaque pixel glissé sur le curseur
+
 function renderAudioTrimUI(){
   const maxStart = Math.max(0, audioFullBuffer.duration - AUDIO_CLIP_SECONDS);
   document.getElementById('audio-zone').innerHTML = `
@@ -3173,50 +3176,77 @@ function renderAudioTrimUI(){
       <div style="font-size:12.5px; color:var(--muted); margin-bottom:8px;">Choisis les 30 secondes à publier (morceau de ${fmtMMSS(audioFullBuffer.duration)})</div>
       <input type="range" id="audio-trim-slider" min="0" max="${maxStart}" step="0.5" value="0" style="width:100%;" oninput="updateAudioTrimLabel(this.value)">
       <div style="text-align:center; font-size:12.5px; font-weight:700; color:var(--ink); margin-top:2px;" id="audio-trim-label">${fmtMMSS(0)} – ${fmtMMSS(AUDIO_CLIP_SECONDS)}</div>
+      <!-- Lecteur <audio> natif régénéré par generateTrimPreview() à chaque
+           déplacement du curseur : plus fiable qu'une lecture pilotée en
+           JS (Web Audio), qui restait silencieuse et invisible sur
+           plusieurs mobiles — ici il y a un vrai bouton ▶ à l'écran. -->
+      <div id="audio-trim-preview" style="margin-top:10px;"></div>
       <div style="display:flex; gap:8px; margin-top:10px;">
-        <button type="button" onclick="previewAudioTrim()" style="flex:1; padding:9px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-weight:700; font-size:12.5px;">▶ Écouter</button>
+        <button type="button" onclick="previewAudioTrim()" style="flex:1; padding:9px; border-radius:10px; border:1px solid var(--line); background:var(--bg); color:var(--ink); font-weight:700; font-size:12.5px;">▶ Écouter cet extrait</button>
         <button type="button" onclick="confirmAudioTrim()" style="flex:1; padding:9px; border-radius:10px; border:none; background:#8B5CF6; color:#fff; font-weight:700; font-size:12.5px;">✓ Valider cet extrait</button>
       </div>
       <div style="text-align:center; margin-top:8px; font-size:11.5px; color:var(--muted); cursor:pointer; text-decoration:underline;" onclick="removeAudio()">Retirer ce fichier</div>
     </div>`;
+  generateTrimPreview(false);
 }
 function updateAudioTrimLabel(v){
   audioClipStart = parseFloat(v);
   const label = document.getElementById('audio-trim-label');
   if(label) label.textContent = fmtMMSS(audioClipStart) + ' – ' + fmtMMSS(audioClipStart + AUDIO_CLIP_SECONDS);
+  clearTimeout(trimPreviewTimer);
+  trimPreviewTimer = setTimeout(() => generateTrimPreview(false), 350);
+}
+/* Découpe le morceau décodé à [startAt, +30s] et le rééchantillonne en
+   mono/22kHz (OfflineAudioContext fait le ré-échantillonnage et le mixage
+   des canaux automatiquement) → fichier WAV. */
+async function renderClipBlob(startAt){
+  const clipDuration = Math.min(AUDIO_CLIP_SECONDS, audioFullBuffer.duration - startAt);
+  const frameCount = Math.max(1, Math.ceil(clipDuration * AUDIO_CLIP_SAMPLE_RATE));
+  const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const offlineCtx = new OfflineCtx(1, frameCount, AUDIO_CLIP_SAMPLE_RATE);
+  const src = offlineCtx.createBufferSource();
+  src.buffer = audioFullBuffer;
+  src.connect(offlineCtx.destination);
+  src.start(0, startAt, clipDuration);
+  const renderedBuffer = await offlineCtx.startRendering();
+  return audioBufferToWavBlob(renderedBuffer);
+}
+/* Génère un vrai lecteur <audio> pour la fenêtre actuellement choisie, pour
+   que l'artiste voie ET entende précisément ce qu'il est en train de
+   sélectionner avant de valider. */
+async function generateTrimPreview(autoplay){
+  if(!audioFullBuffer) return;
+  const previewEl = document.getElementById('audio-trim-preview');
+  if(previewEl) previewEl.innerHTML = `<div style="font-size:11.5px; color:var(--muted);">Préparation de l'extrait…</div>`;
+  try{
+    const blob = await renderClipBlob(audioClipStart);
+    if(trimPreviewUrl) URL.revokeObjectURL(trimPreviewUrl);
+    trimPreviewUrl = URL.createObjectURL(blob);
+    if(!previewEl) return;
+    previewEl.innerHTML = `<audio id="audio-trim-player" controls src="${trimPreviewUrl}" style="width:100%; height:36px;"></audio>`;
+    if(autoplay){
+      const player = document.getElementById('audio-trim-player');
+      // La lecture auto peut être bloquée par le navigateur (politique
+      // autoplay) : dans ce cas le bouton ▶ du lecteur reste là, visible et
+      // utilisable — jamais un échec silencieux comme avant.
+      if(player) player.play().catch(()=>{});
+    }
+  }catch(err){
+    console.warn('Erreur aperçu audio', err);
+    if(previewEl) previewEl.innerHTML = `<div style="font-size:11.5px; color:#E5484D;">Aperçu indisponible, réessaie</div>`;
+  }
 }
 function previewAudioTrim(){
-  if(!audioFullBuffer) return;
-  try{
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    const playCtx = new AudioCtx();
-    const src = playCtx.createBufferSource();
-    src.buffer = audioFullBuffer;
-    src.connect(playCtx.destination);
-    const dur = Math.min(AUDIO_CLIP_SECONDS, audioFullBuffer.duration - audioClipStart);
-    src.start(0, audioClipStart, dur);
-  }catch(err){ console.warn('Erreur prévisualisation audio', err); }
+  generateTrimPreview(true);
 }
 async function confirmAudioTrim(){
   await buildAudioClip();
 }
-/* Découpe le morceau décodé à [audioClipStart, +30s], le rééchantillonne en
-   mono/22kHz (via OfflineAudioContext, qui fait le ré-échantillonnage et le
-   mixage des canaux automatiquement), puis l'encode en WAV → base64. */
 async function buildAudioClip(){
   if(!audioFullBuffer) return;
   document.getElementById('audio-zone').innerHTML = `<div style="font-size:12.5px; color:var(--muted); padding:10px;">Préparation de l'extrait…</div>`;
-  const clipDuration = Math.min(AUDIO_CLIP_SECONDS, audioFullBuffer.duration - audioClipStart);
-  const frameCount = Math.max(1, Math.ceil(clipDuration * AUDIO_CLIP_SAMPLE_RATE));
   try{
-    const OfflineCtx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    const offlineCtx = new OfflineCtx(1, frameCount, AUDIO_CLIP_SAMPLE_RATE);
-    const src = offlineCtx.createBufferSource();
-    src.buffer = audioFullBuffer;
-    src.connect(offlineCtx.destination);
-    src.start(0, audioClipStart, clipDuration);
-    const renderedBuffer = await offlineCtx.startRendering();
-    const wavBlob = audioBufferToWavBlob(renderedBuffer);
+    const wavBlob = await renderClipBlob(audioClipStart);
     pendingAudio = await blobToBase64(wavBlob);
   }catch(err){
     console.warn('Erreur préparation extrait audio', err);
@@ -3224,6 +3254,7 @@ async function buildAudioClip(){
     removeAudio();
     return;
   }
+  if(trimPreviewUrl){ URL.revokeObjectURL(trimPreviewUrl); trimPreviewUrl = null; }
   document.getElementById('audio-zone').innerHTML = `
     <div style="display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 12px;">
       <audio controls src="${pendingAudio}" style="flex-grow:1; height:36px; min-width:0;"></audio>
@@ -3281,6 +3312,8 @@ function removeAudio(){
   pendingAudio = null;
   audioFullBuffer = null;
   audioClipStart = 0;
+  clearTimeout(trimPreviewTimer);
+  if(trimPreviewUrl){ URL.revokeObjectURL(trimPreviewUrl); trimPreviewUrl = null; }
   const input = document.getElementById('f-audio');
   if(input) input.value = '';
   document.getElementById('audio-zone').innerHTML = `
