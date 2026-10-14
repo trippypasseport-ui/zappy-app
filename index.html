@@ -2351,11 +2351,12 @@ async function loadRemotePosts(){
       comments: commentRows.map(c => ({authorId: c.author_id, author: c.author_name || 'Testeur Zapy', avatarUrl: c.author_avatar_url || null, text: c.text}))
     };
   });
-  // Les publications des membres/artistes suivis (voir toggleFollow)
-  // remontent en priorité dans le fil — tri stable, donc l'ordre
-  // chronologique est conservé à l'intérieur de chaque groupe (suivi / non
-  // suivi), puisque la requête est déjà triée par date décroissante.
-  remotePosts.sort((a, b) => (myFollows.has(b.authorId)?1:0) - (myFollows.has(a.authorId)?1:0));
+  // Le fil reste strictement chronologique (le plus récent en premier) —
+  // la requête ci-dessus trie déjà par date décroissante, donc rien à
+  // refaire ici. Une version antérieure faisait remonter en priorité les
+  // publications des membres suivis avant celles des autres, même plus
+  // anciennes ; retiré à la demande du client, qui veut voir la toute
+  // dernière publication en haut, suivie ou non.
   renderPosts();
   if(openPostId!=null) renderComments();
   renderMapMarkers();
