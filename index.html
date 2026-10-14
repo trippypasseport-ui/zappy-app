@@ -331,6 +331,14 @@
   .trail-meta{display:flex; gap:10px; margin-top:7px; flex-wrap:wrap;}
   .trail-badge{font-size:10px; font-weight:800; padding:3px 8px; border-radius:8px;}
   .trail-chip{font-size:10.5px; color:var(--muted); display:flex; align-items:center; gap:3px;}
+
+  /* ---- Attente du fil (voir feedLoading dans le script) ----
+     Affiché à la place de "Rien dans cette catégorie" pendant le tout
+     premier aller-retour réseau, pour qu'un démarrage un peu lent (mobile,
+     connexion faible) ne donne pas l'impression d'une app vide ou cassée. */
+  .feed-loading{display:flex; flex-direction:column; align-items:center; gap:10px; padding:40px 0; color:var(--muted); font-size:13px;}
+  .feed-spinner{width:28px; height:28px; border-radius:50%; border:3px solid var(--line); border-top-color:var(--orange); animation:feed-spin 0.8s linear infinite;}
+  @keyframes feed-spin{ to{ transform:rotate(360deg); } }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <!-- Leaflet (carte réelle OpenStreetMap) : CSS inlinée depuis la lib officielle, JS via CDN -->
@@ -1876,6 +1884,14 @@ let myAvatarUrl = null;
 let myMemberSince = null;
 let amIAdmin = false;
 let remotePosts = [];       // publications venant de la base, partagées entre tous les appareils
+// Tant que ni le cache local ni la vraie réponse réseau ne sont arrivés, le
+// fil est réellement vide (remotePosts=[] et posts=[]) — sans ce drapeau,
+// renderPosts() affichait "Rien dans cette catégorie pour l'instant.",
+// donnant l'impression que l'app est cassée ou vide pendant les quelques
+// centaines de ms/secondes que prend le premier aller-retour réseau,
+// surtout sur une connexion mobile. Passe à false dès que loadRemotePosts()
+// a une vraie réponse (succès OU erreur) — voir loadRemotePosts().
+let feedLoading = true;
 let audioAvailableIds = new Set(); // ids des publications qui ont un extrait audio (voir loadRemotePosts/playPostAudio)
 let loadedAudioCache = {};  // extraits déjà récupérés à la demande (publication_id -> data URL), pour ne pas les re-télécharger
 let myConfirmedIds = new Set(); // ids déjà confirmés "dégagé" par CET appareil
@@ -2302,7 +2318,7 @@ async function initBackend(){
 }
 
 async function loadRemotePosts(){
-  if(!sb) return;
+  if(!sb){ feedLoading = false; renderPosts(); return; }
   // Une publication avec une date de fin dépassée (expires_at) ne doit plus
   // jamais être chargée : c'est ce qui la fait "disparaître" automatiquement
   // de partout (fil, carte) sans avoir besoin d'une tâche serveur dédiée.
@@ -2312,7 +2328,7 @@ async function loadRemotePosts(){
     .select('*, confirmations(user_id), likes(user_id, author_name, author_avatar_url), comments(id, author_id, author_name, author_avatar_url, text, created_at)')
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order('created_at', {ascending:false});
-  if(error){ console.warn('Erreur chargement publications', error); return; }
+  if(error){ console.warn('Erreur chargement publications', error); feedLoading = false; renderPosts(); return; }
   // L'extrait audio vit dans sa propre table (publication_audio), jamais
   // chargé ici : un extrait de 30s pèse ~1,7 Mo, et l'embarquer dans CE
   // select (rechargé à chaque like/commentaire/nouvelle publication, et
@@ -2364,6 +2380,7 @@ async function loadRemotePosts(){
   // publications des membres suivis avant celles des autres, même plus
   // anciennes ; retiré à la demande du client, qui veut voir la toute
   // dernière publication en haut, suivie ou non.
+  feedLoading = false;
   renderPosts();
   if(openPostId!=null) renderComments();
   renderMapMarkers();
@@ -2519,7 +2536,9 @@ function renderPosts(){
   const combined = [...remotePosts, ...posts];
   const shown = activeCat==='toutes' ? combined : combined.filter(p=>p.cat===activeCat);
   if(shown.length===0){
-    list.innerHTML = '<div style="text-align:center; padding:30px 0; color:#90A4AE; font-size:13px;">Rien dans cette catégorie pour l’instant.</div>';
+    list.innerHTML = feedLoading
+      ? '<div class="feed-loading"><div class="feed-spinner"></div><div>Chargement des publications…</div></div>'
+      : '<div style="text-align:center; padding:30px 0; color:#90A4AE; font-size:13px;">Rien dans cette catégorie pour l’instant.</div>';
     return;
   }
   list.innerHTML = shown.map(p => `
@@ -4979,6 +4998,13 @@ initNotifPrefs();
 renderMapMarkers();
 document.getElementById('quick-wx-sub').textContent = WEATHER_NOW.temp + '°C · ' + WEATHER_NOW.place;
 document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' sentiers à découvrir';
+// Garde-fou : si loadRemotePosts() ne redonne jamais la main pour une
+// raison imprévue (exception non attrapée, requête qui ne répond jamais),
+// le spinner de chargement ne doit quand même pas tourner indéfiniment —
+// au-delà de 8s, on bascule sur le vrai message "Rien pour l'instant" /
+// l'éventuel fil déjà en cache, plutôt que de laisser croire que ça charge
+// encore alors que ce n'est plus le cas.
+setTimeout(() => { if(feedLoading){ feedLoading = false; renderPosts(); } }, 8000);
 
 /* Amorçage : une arrivée directe par lien dédié (#admin, #commerce —
    réservés à l'équipe Zapy / au client, pas à un testeur anonyme) saute
