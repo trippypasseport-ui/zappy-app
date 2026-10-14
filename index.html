@@ -4959,6 +4959,20 @@ document.getElementById('quick-trail-sub').textContent = TRAILS.length + ' senti
     document.getElementById('onboarding-overlay').style.display = 'flex';
   }
 })();
+
+/* Retour au premier plan (on change d'app, on verrouille l'écran, puis on
+   revient) : iOS coupe la connexion temps réel pendant que l'app est en
+   arrière-plan, et ne la rétablit pas forcément proprement au retour — le
+   fil pouvait alors rester figé sur ce qu'il avait la dernière fois,
+   même après la publication de quelqu'un d'autre entre-temps, sans que
+   rien ne le signale. On réactualise donc le fil (et les notifications)
+   nous-mêmes à chaque retour au premier plan, en plus du temps réel. */
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'visible' && sb && currentUserId){
+    loadRemotePosts();
+    loadNotifications();
+  }
+});
 </script>
 </body>
 </html>
