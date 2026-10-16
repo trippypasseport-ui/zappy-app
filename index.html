@@ -304,8 +304,8 @@
   /* ---- Météo communauté ---- */
   .wx-share-btn{display:flex; align-items:center; gap:5px; font-size:12px; color:#FF8A00; font-weight:800; cursor:pointer;}
   .wx-form{margin:0 18px 16px; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:14px;}
-  .wx-cond-row{display:flex; gap:8px; margin:8px 0 2px;}
-  .wx-cond-opt{flex:1; text-align:center; font-size:22px; padding:8px 0; border-radius:12px; border:2px solid var(--line); cursor:pointer; background:var(--bg);}
+  .wx-cond-row{display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 2px;}
+  .wx-cond-opt{flex:1 1 28%; min-width:72px; text-align:center; font-size:22px; padding:8px 4px; border-radius:12px; border:2px solid var(--line); cursor:pointer; background:var(--bg);}
   .wx-cond-opt.selected{border-color:#4FC3F7; background:#E3F4FD;}
   .wx-reports-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:0 18px 22px;}
   .wx-report-card{position:relative; border-radius:14px; overflow:hidden; aspect-ratio:1/1; background:var(--line);}
@@ -1629,6 +1629,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <input type="file" accept="image/*" id="f-wx-photo" style="display:none;" onchange="handleWxPhoto(event)">
         <div class="field-label" style="margin-top:12px;">Ça ressemble à quoi chez toi ?</div>
         <div class="wx-cond-row" id="wx-cond-row"></div>
+        <div id="wx-alert-until-wrap" style="display:none;">
+          <div class="field-label" style="margin-top:12px;">Valable jusqu'à</div>
+          <input type="datetime-local" id="f-wx-alert-until" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;">
+        </div>
         <div class="field-label" style="margin-top:12px;">Ta position</div>
         <select id="f-wx-commune" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;"></select>
         <button type="button" class="submit-btn" style="width:100%; margin-top:12px;" onclick="publishWxReport()">Publier ma météo</button>
@@ -1784,6 +1788,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <select id="rep-edit-place" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:10px; font-family:inherit; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin:6px 0 12px;"></select>
         <div class="field-label">Condition</div>
         <div class="wx-cond-row" id="rep-edit-cond-row" style="margin-top:6px;"></div>
+        <div id="rep-edit-alert-until-wrap" style="display:none;">
+          <div class="field-label" style="margin-top:12px;">Valable jusqu'à</div>
+          <input type="datetime-local" id="rep-edit-alert-until" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;">
+        </div>
         <button type="button" class="submit-btn" style="margin-top:14px; width:100%;" onclick="submitEditReport()">Enregistrer les modifications</button>
       </div>
     </div>
@@ -3766,8 +3774,47 @@ function renderWeather(){
     </div>`).join('');
 }
 
-/* ---- Météo communauté ---- */
-const WX_CONDITIONS = ['☀️','⛅','🌧️','⛈️','🌫️'];
+/* ---- Météo communauté ----
+   Durées d'affichage conseillées par le client, par type de météo (table
+   fournie le 16/10) : chaque partage expire automatiquement après la durée
+   de son type, au lieu de rester affiché indéfiniment. "Alerte météo
+   officielle" est un cas à part : hours=null signifie une durée choisie par
+   l'auteur lui-même au moment de publier (champ "Valable jusqu'à", voir
+   #f-wx-alert-until / #rep-edit-alert-until), puisque sa durée dépend de la
+   validité de l'alerte officielle et ne peut pas être une valeur fixe. */
+const WX_CONDITIONS = [
+  {emoji:'☀️', label:'Soleil / ciel dégagé', hours:6},
+  {emoji:'⛅', label:'Ciel nuageux', hours:4},
+  {emoji:'🌦️', label:'Pluie faible', hours:2},
+  {emoji:'🌧️', label:'Forte pluie / averses', hours:1},
+  {emoji:'⛈️', label:'Orage / fortes précipitations', hours:1},
+  {emoji:'🌊', label:'Inondation liée aux intempéries', hours:1}, // conseillé "30 min à 1h avec actualisation" — 1h retenue comme borne haute, l'actualisation étant déjà couverte par le temps réel et le tire-pour-rafraîchir
+  {emoji:'🚨', label:'Alerte météo officielle', hours:null},
+];
+function wxConditionMeta(emoji){ return WX_CONDITIONS.find(c => c.emoji === emoji) || WX_CONDITIONS[0]; }
+// Calcule l'expiration à envoyer en base pour le type de météo sélectionné.
+// Pour l'alerte officielle (hours:null), lit la date/heure saisie dans le
+// champ dont l'id est passé en paramètre (le formulaire de publication et
+// la modale de modification ont chacun le leur). Retourne null si la saisie
+// est invalide (le champ n'est alors pas rempli ou pas dans le futur) —
+// l'appelant doit vérifier ce cas et ne pas publier/enregistrer.
+function computeWxExpiresAt(emoji, alertUntilInputId){
+  const meta = wxConditionMeta(emoji);
+  if(meta.hours !== null) return new Date(Date.now() + meta.hours*3600*1000).toISOString();
+  const raw = document.getElementById(alertUntilInputId).value;
+  if(!raw) return null;
+  const d = new Date(raw);
+  if(isNaN(d.getTime()) || d.getTime() <= Date.now()) return null;
+  return d.toISOString();
+}
+// Convertit une date ISO (venant de la base) vers le format attendu par
+// <input type="datetime-local"> ("YYYY-MM-DDTHH:mm"), en heure locale.
+function toLocalDatetimeInputValue(iso){
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
 let selectedWxCondition = '☀️';
 let pendingWxPhoto = null;
 let wxFormOpen = false;
@@ -3779,7 +3826,14 @@ let WEATHER_REPORTS = [
 let remoteWxReports = [];
 async function loadRemoteWxReports(){
   if(!sb) return;
-  const { data, error } = await sb.from('weather_reports').select('*').order('created_at', {ascending:false}).limit(30);
+  // Un partage météo expiré (expires_at dépassé) ne doit plus être chargé —
+  // la durée dépend du type (voir WX_CONDITIONS). expires_at.is.null reste
+  // accepté pour ne pas masquer d'anciennes lignes orphelines malgré le
+  // correctif de migration qui les a toutes datées.
+  const nowIso = new Date().toISOString();
+  const { data, error } = await sb.from('weather_reports').select('*')
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order('created_at', {ascending:false}).limit(30);
   if(error){ console.warn('Erreur météo communauté', error); return; }
   // Confirmations ("toujours exact ?") : une seconde requête groupée plutôt
   // qu'une jointure, pour rester simple — un partage météo change rarement
@@ -3794,7 +3848,7 @@ async function loadRemoteWxReports(){
       if(c.user_id === currentUserId) myConfirmed.add(c.weather_report_id);
     });
   }
-  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji, authorId:r.author_id, confirmCount:confirmCounts[r.id]||0, confirmedByMe:myConfirmed.has(r.id)}));
+  remoteWxReports = (data||[]).map(r => ({id:r.id, photo:r.photo_url, place:r.commune, time:timeAgo(r.created_at), emoji:r.emoji, authorId:r.author_id, expiresAt:r.expires_at, confirmCount:confirmCounts[r.id]||0, confirmedByMe:myConfirmed.has(r.id)}));
   renderWxReports();
 }
 /* Confirmer ("c'est toujours comme ça") ou retirer sa confirmation sur le
@@ -3831,7 +3885,14 @@ function toggleWxForm(){
 }
 function renderWxConditionPicker(){
   document.getElementById('wx-cond-row').innerHTML = WX_CONDITIONS.map(c => `
-    <div class="wx-cond-opt ${selectedWxCondition===c?'selected':''}" onclick="selectedWxCondition='${c}'; renderWxConditionPicker();">${c}</div>`).join('');
+    <div class="wx-cond-opt ${selectedWxCondition===c.emoji?'selected':''}" onclick="selectedWxCondition='${c.emoji}'; renderWxConditionPicker();">
+      <div style="font-size:22px; line-height:1;">${c.emoji}</div>
+      <div style="font-size:9.5px; font-weight:700; color:var(--muted); margin-top:3px; line-height:1.15;">${c.label}</div>
+    </div>`).join('');
+  // Champ "Valable jusqu'à" réservé à l'alerte météo officielle (durée
+  // personnalisée, voir WX_CONDITIONS) — masqué pour les autres types.
+  const wrap = document.getElementById('wx-alert-until-wrap');
+  if(wrap) wrap.style.display = wxConditionMeta(selectedWxCondition).hours===null ? 'block' : 'none';
 }
 async function handleWxPhoto(e){
   const file = e.target.files[0];
@@ -3864,8 +3925,13 @@ async function publishWxReport(){
   const commune = document.getElementById('f-wx-commune').value.trim();
   if(!pendingWxPhoto){ toast('Ajoute une photo avant de publier'); return; }
   if(!commune){ toast('Indique ta position'); return; }
+  // La durée d'affichage dépend du type sélectionné (voir WX_CONDITIONS) ;
+  // pour l'alerte météo officielle, l'auteur doit indiquer lui-même jusqu'à
+  // quand elle reste valable.
+  const expiresAt = computeWxExpiresAt(selectedWxCondition, 'f-wx-alert-until');
+  if(expiresAt === null){ toast("Indique jusqu'à quand l'alerte est valable (date/heure future)"); return; }
   if(sb && currentUserId){
-    const { error } = await sb.from('weather_reports').insert({author_id: currentUserId, author_name: myPseudo, commune, emoji: selectedWxCondition, photo_url: pendingWxPhoto});
+    const { error } = await sb.from('weather_reports').insert({author_id: currentUserId, author_name: myPseudo, commune, emoji: selectedWxCondition, photo_url: pendingWxPhoto, expires_at: expiresAt});
     if(error){ console.warn('Météo partagée échouée', error); toast('Erreur, réessaie'); return; }
     await loadRemoteWxReports();
   } else {
@@ -3876,6 +3942,8 @@ async function publishWxReport(){
   pendingWxPhoto = null;
   document.getElementById('f-wx-commune').value = '';
   selectedWxCondition = '☀️';
+  const alertInput = document.getElementById('f-wx-alert-until');
+  if(alertInput) alertInput.value = '';
   removeWxPhoto();
   toast('Météo partagée, merci !');
   // Comme pour une publication classique (voir actuallyPublish), on renvoie
@@ -3912,12 +3980,27 @@ function openEditReportModal(type, id){
   const opts = type === 'wx' ? COMMUNES : getAllTrails().map(t => t.name);
   document.getElementById('rep-edit-place').innerHTML = opts.map(o => `<option value="${o}" ${o===r.place?'selected':''}>${o}</option>`).join('');
   renderEditReportConditionPicker();
+  // Préremplit "Valable jusqu'à" si ce partage avait déjà une expiration
+  // choisie à la main (cas de l'alerte météo officielle).
+  const alertInput = document.getElementById('rep-edit-alert-until');
+  if(alertInput) alertInput.value = (type === 'wx' && r.expiresAt) ? toLocalDatetimeInputValue(r.expiresAt) : '';
   document.getElementById('report-edit-overlay').classList.add('show');
 }
 function renderEditReportConditionPicker(){
-  const conds = editingReportType === 'wx' ? WX_CONDITIONS : HIKE_CONDITIONS;
-  document.getElementById('rep-edit-cond-row').innerHTML = conds.map(c => `
-    <div class="wx-cond-opt ${editingReportCondition===c?'selected':''}" onclick="editingReportCondition='${c}'; renderEditReportConditionPicker();">${c}</div>`).join('');
+  if(editingReportType === 'wx'){
+    document.getElementById('rep-edit-cond-row').innerHTML = WX_CONDITIONS.map(c => `
+      <div class="wx-cond-opt ${editingReportCondition===c.emoji?'selected':''}" onclick="editingReportCondition='${c.emoji}'; renderEditReportConditionPicker();">
+        <div style="font-size:22px; line-height:1;">${c.emoji}</div>
+        <div style="font-size:9.5px; font-weight:700; color:var(--muted); margin-top:3px; line-height:1.15;">${c.label}</div>
+      </div>`).join('');
+    const wrap = document.getElementById('rep-edit-alert-until-wrap');
+    if(wrap) wrap.style.display = wxConditionMeta(editingReportCondition).hours===null ? 'block' : 'none';
+  } else {
+    document.getElementById('rep-edit-cond-row').innerHTML = HIKE_CONDITIONS.map(c => `
+      <div class="wx-cond-opt ${editingReportCondition===c?'selected':''}" onclick="editingReportCondition='${c}'; renderEditReportConditionPicker();">${c}</div>`).join('');
+    const wrap = document.getElementById('rep-edit-alert-until-wrap');
+    if(wrap) wrap.style.display = 'none';
+  }
 }
 function closeEditReportModal(){
   document.getElementById('report-edit-overlay').classList.remove('show');
@@ -3932,9 +4015,18 @@ async function submitEditReport(){
   const placeCol = type === 'wx' ? 'commune' : 'trail_name';
   const remoteList = type === 'wx' ? remoteWxReports : remoteHikeReports;
   const remote = remoteList.find(x => String(x.id) === String(id));
+  const updatePayload = { [placeCol]: place, emoji: editingReportCondition };
+  if(type === 'wx'){
+    // Changer de type de météo change aussi la durée d'affichage restante —
+    // on la recalcule à partir de maintenant plutôt que de garder
+    // l'ancienne expiration, qui correspondait à un autre type.
+    const expiresAt = computeWxExpiresAt(editingReportCondition, 'rep-edit-alert-until');
+    if(expiresAt === null){ toast("Indique jusqu'à quand l'alerte est valable (date/heure future)"); return; }
+    updatePayload.expires_at = expiresAt;
+  }
   if(remote && sb && currentUserId){
     const { error } = await sb.from(table)
-      .update({ [placeCol]: place, emoji: editingReportCondition })
+      .update(updatePayload)
       .eq('id', id).eq('author_id', currentUserId);
     if(error){ console.warn('Modification échouée', error); toast('Erreur, réessaie'); return; }
     if(type === 'wx') await loadRemoteWxReports(); else await loadRemoteHikeReports();
