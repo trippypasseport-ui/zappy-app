@@ -209,6 +209,7 @@
   .price-name{font-family:'Baloo 2',sans-serif; font-weight:700; font-size:15px; color:var(--ink);}
   .price-amount{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:17px; color:var(--orange);}
   .price-amount small{font-size:11px; font-weight:700; color:var(--muted);}
+  .price-promo{font-size:11px; font-weight:700; color:#2E9E5B; background:rgba(46,158,91,0.12); border-radius:8px; padding:4px 8px; margin-top:2px; display:inline-block;}
   .price-feats{list-style:none; margin-top:10px; display:flex; flex-direction:column; gap:6px;}
   .price-feats li{font-size:12px; color:var(--ink); display:flex; align-items:center; gap:7px;}
   .price-btn{width:100%; margin-top:14px; padding:11px; border-radius:11px; border:1.5px solid var(--orange); background:transparent; color:var(--orange); font-weight:800; font-size:12.5px; cursor:pointer;}
@@ -1207,6 +1208,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <input type="date" id="f-enddate">
           <div style="font-size:11.5px; color:#78909C; margin-top:6px;">La publication disparaît automatiquement le lendemain de cette date. Laisse vide pour une publication sans date de fin.</div>
         </div>
+        <div id="commerce-subcat-block" style="display:none;">
+          <label class="field-label" for="f-commerce-subcat">Catégorie de commerce</label>
+          <select id="f-commerce-subcat" onchange="selectedCommerceSubcat=this.value||null;" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box;"></select>
+        </div>
         <div>
           <div class="field-label">Localisation</div>
           <div class="loc-box" id="loc-box">
@@ -1335,9 +1340,31 @@ svg.leaflet-image-layer.leaflet-interactive path {
         Mettez votre commerce en avant auprès de toute la Martinique. Vos publications sponsorisées apparaissent en priorité dans le fil et sur la carte.
       </div>
       <div class="pricing-list" id="pricing-list"></div>
-      <div style="padding:4px 18px 0;">
-        <button type="button" class="submit-btn" onclick="startMerchantPublish()">+ Publier une promotion</button>
+      <div style="padding:4px 18px 0; display:flex; gap:8px;">
+        <button type="button" class="submit-btn" style="flex:1;" onclick="startMerchantPublish()">+ Publier une promotion</button>
+        <button type="button" class="submit-btn" style="flex:1; background:var(--surface); color:var(--orange); border:1.5px solid var(--orange);" onclick="startMerchantBonPlan()">+ Bon plan</button>
       </div>
+
+      <div class="section-tag">Ma fiche commerçante</div>
+      <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface);">
+        <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">Visible publiquement dès que tu as une formule active — nom du commerce, catégorie, site internet et tes bons plans en cours.</div>
+        <input type="text" id="mp-business-name" placeholder="Nom du commerce" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin-bottom:8px;">
+        <select id="mp-subcategory" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin-bottom:8px;"></select>
+        <input type="url" id="mp-website" placeholder="Lien du site internet (https://…)" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin-bottom:8px;">
+        <textarea id="mp-description" placeholder="Courte description" rows="2" style="width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13px; background:var(--bg); color:var(--ink); box-sizing:border-box; margin-bottom:10px; font-family:inherit; resize:vertical;"></textarea>
+        <button type="button" class="submit-btn" style="width:100%;" onclick="saveMerchantProfile()">Enregistrer ma fiche</button>
+        <div id="mp-view-link" style="text-align:center; margin-top:10px; font-size:12.5px; color:#4FC3F7; font-weight:700; cursor:pointer; display:none;" onclick="openMerchantFiche(currentUserId)">Voir ma fiche publique →</div>
+      </div>
+
+      <div id="mp-stats-section" style="display:none;">
+        <div class="section-tag">Statistiques de visibilité</div>
+        <div style="margin:0 18px 14px; padding:14px; border:1px solid var(--line); border-radius:14px; background:var(--surface); display:flex; justify-content:space-around; text-align:center;">
+          <div><div style="font-size:18px; font-weight:800; color:var(--orange);" id="mp-stat-fiche">0</div><div style="font-size:10.5px; color:var(--muted);">Vues de la fiche</div></div>
+          <div><div style="font-size:18px; font-weight:800; color:var(--orange);" id="mp-stat-pubs">0</div><div style="font-size:10.5px; color:var(--muted);">Vues des publications</div></div>
+          <div><div style="font-size:18px; font-weight:800; color:var(--orange);" id="mp-stat-clicks">0</div><div style="font-size:10.5px; color:var(--muted);">Clics bons plans</div></div>
+        </div>
+      </div>
+
       <div class="section-tag">Aperçu dans le fil</div>
       <div class="post-list" style="padding-bottom:20px;">
         <div class="post-card">
@@ -1347,6 +1374,32 @@ svg.leaflet-image-layer.leaflet-interactive path {
             <div class="post-text">Restaurant Le Ti’Kréol — Fort-de-France</div>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- FICHE COMMERÇANTE PUBLIQUE — accessible depuis le nom d'un commerçant
+         dans le fil ou sur la carte (openMerchantFiche). Lecture seule pour
+         les visiteurs ; "Ma fiche commerçante" dans Espace commerçant sert à
+         la remplir. -->
+    <section class="screen" id="screen-merchant-fiche">
+      <div class="sub-head">
+        <div class="icon-btn" onclick="showScreen('accueil')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><polyline points="15 18 9 12 15 6"/></svg></div>
+        <div class="sub-title" id="mf-title">Fiche commerçante</div>
+      </div>
+      <div style="padding:14px 18px;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <div class="avatar-xl" id="mf-avatar" style="width:52px; height:52px; border-radius:50%; background:var(--orange-light); display:flex; align-items:center; justify-content:center; font-weight:800; color:#8A4B00; font-size:20px;"></div>
+          <div>
+            <div style="font-weight:800; font-size:16px; color:var(--ink);" id="mf-name">—</div>
+            <div style="font-size:12px; color:var(--muted);" id="mf-category">—</div>
+          </div>
+        </div>
+        <div id="mf-description" style="font-size:13px; color:var(--ink); line-height:1.5; margin-bottom:10px;"></div>
+        <a id="mf-website" href="#" target="_blank" rel="noopener" style="display:none; font-size:13px; color:#4FC3F7; font-weight:700; margin-bottom:16px;">🔗 Visiter le site internet</a>
+      </div>
+      <div class="section-tag">Bons plans en cours</div>
+      <div class="post-list" id="mf-bonsplans-list" style="padding-bottom:30px;">
+        <div style="text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Aucun bon plan en cours.</div>
       </div>
     </section>
 
@@ -2310,6 +2363,7 @@ async function initBackend(){
       safe(loadRemoteWxReports(), 'météo'),
       safe(loadRemoteHikeReports(), 'randonnées'),
       safe(loadRemoteTrails(), 'sentiers'),
+      safe(loadCommerceSubcats(), 'catégories de commerces'),
     ]);
     handleCheckoutRedirect();
     // Un seul canal temps réel partagé pour toutes les tables écoutées, au
@@ -2413,14 +2467,18 @@ async function loadRemotePosts(){
       id: row.id, remote:true, authorId: row.author_id, createdAt: row.created_at,
       name: row.author_name || 'Testeur Zapy', initial: (row.author_name||'T')[0].toUpperCase(),
       avatarUrl: row.author_avatar_url || null,
-      color: meta.color, verified:false, time: timeAgo(row.created_at), place: row.commune || '—',
+      // Badge affiché : "Commerce vérifié" pour la formule Liberté,
+      // "Sponsorisé" pour Découverte/Confort (voir author_plan, posé par le
+      // trigger serveur enforce_merchant_publication_limits à la publication).
+      color: meta.color, verified: row.author_plan === 'liberte', authorPlan: row.author_plan || null,
+      time: timeAgo(row.created_at), place: row.commune || '—',
       title: row.title, text: row.description || '—', photo: row.photo_url,
       photos: (row.photos && row.photos.length) ? row.photos : null,
       audio: loadedAudioCache[row.id] || null, hasAudio: audioAvailableIds.has(row.id),
       exactLat: row.exact_lat ?? null, exactLng: row.exact_lng ?? null,
       likes: likeRows.length, commentCount: commentRows.length, liked: iLiked, cat: row.category_id,
       urgency: row.urgency, cleared: cleared, clearConfirms: confirmCount,
-      sponsored: !!row.is_sponsored,
+      sponsored: !!row.is_sponsored && row.author_plan !== 'liberte',
       // Qui a aimé (avatar/nom dénormalisés sur likes à l'insertion — voir
       // toggleLike — car profiles n'est pas lisible pour un autre membre).
       likers: likeRows.map(l => ({userId: l.user_id, name: l.author_name || 'Testeur Zapy', avatarUrl: l.author_avatar_url || null})),
@@ -2470,7 +2528,7 @@ function saveCachedPostsToLocalStorage(){
   const build = (withAvatar) => remotePosts.slice(0, CACHED_POSTS_MAX).map(p => ({
     id:p.id, remote:true, authorId:p.authorId, createdAt:p.createdAt,
     name:p.name, initial:p.initial, avatarUrl: withAvatar ? p.avatarUrl : null, color:p.color,
-    verified:false, time:p.time, place:p.place, title:p.title, text:p.text,
+    verified:p.verified, authorPlan:p.authorPlan, time:p.time, place:p.place, title:p.title, text:p.text,
     photo:null, photos:null, audio:null, hasAudio:p.hasAudio,
     exactLat:p.exactLat, exactLng:p.exactLng,
     likes:p.likes, commentCount:p.commentCount, liked:p.liked, cat:p.cat,
@@ -2726,6 +2784,12 @@ function openComments(id){
   document.getElementById('comment-form').style.display = 'flex';
   renderComments();
   document.getElementById('comments-overlay').classList.add('show');
+  // Vue d'une publication commerçante : compte pour les statistiques de
+  // visibilité du commerçant (jamais ses propres vues).
+  const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(id));
+  if(p && p.authorPlan && p.authorId && sb && p.authorId !== currentUserId){
+    sb.rpc('increment_merchant_stat', { target_user_id: p.authorId, stat_name: 'publication_views' }).then(()=>{}, ()=>{});
+  }
 }
 function closeComments(){
   document.getElementById('comments-overlay').classList.remove('show');
@@ -3063,6 +3127,25 @@ function renderCatGrid(){
     </div>`).join('');
 }
 let isMerchantPost = false;
+// Catégories de commerces (sous-catégories de "Commerces" — table subcategories,
+// category_id='commerces') : chargées une fois depuis le serveur, affichées
+// uniquement quand la catégorie "Commerces" est sélectionnée dans le formulaire.
+let COMMERCE_SUBCATS = [];
+let selectedCommerceSubcat = null;
+async function loadCommerceSubcats(){
+  if(!sb) return;
+  const { data, error } = await sb.from('subcategories').select('id, label').eq('category_id', 'commerces').order('label');
+  if(error){ console.warn('Erreur chargement des catégories de commerces', error); return; }
+  COMMERCE_SUBCATS = data || [];
+  const sel = document.getElementById('f-commerce-subcat');
+  if(sel){
+    sel.innerHTML = '<option value="">— Choisir une catégorie —</option>' + COMMERCE_SUBCATS.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
+  }
+  const mpSel = document.getElementById('mp-subcategory');
+  if(mpSel){
+    mpSel.innerHTML = COMMERCE_SUBCATS.map(s => `<option value="${s.id}">${s.label}</option>`).join('');
+  }
+}
 function selectFormCat(id){
   isMerchantPost = false; // réinitialisé par défaut ; remis à true juste après par startMerchantPublish() si besoin
   selectedCat = id;
@@ -3070,6 +3153,10 @@ function selectFormCat(id){
   document.getElementById('urgency-block').style.display = (id==='trafic') ? 'block' : 'none';
   document.getElementById('audio-block').style.display = (id==='artiste') ? 'block' : 'none';
   document.getElementById('enddate-block').style.display = (id==='commerces' || id==='evenements') ? 'block' : 'none';
+  document.getElementById('commerce-subcat-block').style.display = (id==='commerces') ? 'block' : 'none';
+  if(id !== 'commerces'){ selectedCommerceSubcat = null; }
+  const subcatSel = document.getElementById('f-commerce-subcat');
+  if(subcatSel) subcatSel.value = selectedCommerceSubcat || '';
   // En dehors de Commerces, une seule photo est permise : si l'utilisateur
   // avait commencé un catalogue puis change de catégorie, on ne garde que
   // la première photo pour rester cohérent avec le reste du formulaire.
@@ -3616,6 +3703,9 @@ async function actuallyPublish(){
         exact_lng: useExact ? pinLng : null,
         is_sponsored: isMerchantPost,
       };
+      if(selectedCat==='commerces' && selectedCommerceSubcat){
+        insertPayload.subcategory_id = selectedCommerceSubcat;
+      }
       // Commerces et Événements peuvent recevoir une date de fin : la
       // publication disparaît automatiquement le lendemain de cette date
       // (filtrée dans loadRemotePosts). Sans date choisie, une promotion
@@ -3628,7 +3718,19 @@ async function actuallyPublish(){
         insertPayload.expires_at = new Date(Date.now() + 7*24*60*60*1000).toISOString();
       }
       const { data: insertedRow, error } = await sb.from('publications').insert(insertPayload).select('id').single();
-      if(error){ console.warn('Publication partagée échouée, repli local', error); }
+      if(error){
+        console.warn('Publication partagée échouée', error);
+        // Une publication sponsorisée refusée par le quota serveur (voir le
+        // trigger enforce_merchant_publication_limits) ne doit JAMAIS
+        // retomber sur une fausse publication locale avec un message de
+        // succès — ça laisserait croire au commerçant que c'est publié
+        // alors que personne d'autre ne la voit. On arrête tout de suite
+        // avec le vrai message d'erreur du serveur.
+        if(isMerchantPost){
+          toast(error.message && error.message.length < 120 ? error.message : 'Publication refusée, réessaie');
+          return;
+        }
+      }
       else {
         publishedRemotely = true;
         // L'extrait audio est stocké à part (voir loadRemotePosts) — inséré
@@ -3672,6 +3774,7 @@ async function actuallyPublish(){
   document.getElementById('publish-form').reset();
   resetPhotoField();
   removeAudio();
+  selectedCommerceSubcat = null;
   selectedCat = 'trafic'; renderCatGrid();
   selectedUrgency = 'Modérée'; renderUrgency();
   document.getElementById('urgency-block').style.display='none';
@@ -4449,6 +4552,9 @@ let viewedProfileAuthorId = null;
 function openUserProfileFromPost(id){
   const p = [...remotePosts, ...posts].find(x=>String(x.id)===String(id));
   if(!p) return;
+  // Une publication d'un commerçant abonné (author_plan renseigné) ouvre sa
+  // fiche commerçante publique plutôt que le profil générique.
+  if(p.authorPlan && p.authorId){ openMerchantFiche(p.authorId); return; }
   openUserProfile(p.authorId, p.name, p.avatarUrl);
 }
 // Mêmes points d'entrée que openUserProfileFromPost, mais depuis un
@@ -4671,20 +4777,27 @@ let merchants = [
    set_plan_tier_price()) et non plus en localStorage : un changement fait par
    l'administrateur doit être visible par tous les utilisateurs, sur tous les
    appareils — pas seulement dans le navigateur où le changement a été fait. */
+/* Formules du 28/10/2026 (retour client). "promoPrice" est le prix de
+   l'offre de lancement (payé aux mois 2 et 3, après un 1er mois offert) —
+   null si aucune offre de lancement n'est active sur cette formule. Les
+   quotas de publications/bons plans ne sont PAS ici : ils sont appliqués
+   côté serveur par le trigger enforce_merchant_publication_limits()
+   (seule source de vérité), ces chiffres dans "feats" ne sont que du texte
+   d'affichage. */
 let PLAN_TIERS = [
-  {id:'decouverte', name:'Découverte', price:29, featured:false,
-   feats:['1 publication sponsorisée active', 'Badge « Sponsorisé »', 'Visible dans votre commune']},
-  {id:'visibilite', name:'Visibilité', price:59, featured:true,
-   feats:['3 publications sponsorisées actives', 'Mise en avant sur la carte', 'Visible dans toute la Martinique', 'Statistiques de vues']},
-  {id:'partenaire', name:'Partenaire', price:99, featured:false,
-   feats:['Publications illimitées', 'Badge « Commerce vérifié »', 'Notifications push aux abonnés']},
+  {id:'decouverte', name:'Zapy Découverte', price:9.9, promoPrice:3.9, featured:false,
+   feats:['1 publication active', 'Badge « Sponsorisé »', 'Mise en avant pendant 7 jours', 'Visible dans toute la Martinique']},
+  {id:'confort', name:'Zapy Confort', price:19.9, promoPrice:12.9, featured:true,
+   feats:['3 publications actives', '3 bons plans', 'Badge « Sponsorisé »', 'Mise en avant pendant 30 jours', 'Statistiques de visibilité', 'Visible dans toute la Martinique']},
+  {id:'liberte', name:'Zapy Liberté', price:69.9, promoPrice:39.9, featured:false,
+   feats:['Publications illimitées', 'Bons plans illimités', 'Badge « Commerce vérifié »', 'Statistiques de visibilité', 'Mise en avant illimitée']},
 ];
 async function loadPlanTierPrices(){
   if(!sb) return;
   try{
     // Malgré son nom (conservé pour ne pas casser les appels existants),
-    // get_plan_tier_prices() renvoie maintenant aussi le nom et les
-    // avantages de chaque formule — voir set_plan_tier_details().
+    // get_plan_tier_prices() renvoie maintenant aussi le nom, les avantages
+    // et le prix de lancement de chaque formule — voir set_plan_tier_details().
     const { data, error } = await sb.rpc('get_plan_tier_prices');
     if(error || !data) return;
     const byKey = {};
@@ -4696,6 +4809,9 @@ async function loadPlanTierPrices(){
       if(n){ t.name = n; }
       const f = byKey['plan_feats_' + t.id];
       if(f){ try{ const arr = JSON.parse(f); if(Array.isArray(arr)) t.feats = arr; }catch(e){} }
+      const pv = byKey['plan_promo_price_' + t.id];
+      t.promoPrice = (pv != null) ? parseFloat(pv) : null;
+      if(t.promoPrice != null && isNaN(t.promoPrice)) t.promoPrice = null;
     });
   }catch(e){ /* repli silencieux : garde les valeurs par défaut ci-dessus */ }
 }
@@ -4710,6 +4826,120 @@ async function loadMyPlan(){
   const { data, error } = await sb.from('merchant_subscriptions').select('plan_id, status').eq('user_id', currentUserId).maybeSingle();
   if(!error && data && data.status === 'active') myPlan = data.plan_id;
   renderPricingList();
+  loadMyMerchantProfile();
+  renderMerchantStatsSection();
+}
+
+/* ---- Fiche commerçante (nom, catégorie, site web, description) de CET
+   utilisateur — table merchant_profiles, une ligne par commerçant,
+   modifiable par son propriétaire uniquement (RLS). ---- */
+async function loadMyMerchantProfile(){
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('merchant_profiles').select('*').eq('user_id', currentUserId).maybeSingle();
+  if(error){ console.warn('Erreur chargement fiche commerçante', error); return; }
+  const nameEl = document.getElementById('mp-business-name');
+  const subcatEl = document.getElementById('mp-subcategory');
+  const siteEl = document.getElementById('mp-website');
+  const descEl = document.getElementById('mp-description');
+  const viewLink = document.getElementById('mp-view-link');
+  if(nameEl) nameEl.value = (data && data.business_name) || myPseudo || '';
+  if(subcatEl && data && data.subcategory_id) subcatEl.value = data.subcategory_id;
+  if(siteEl) siteEl.value = (data && data.website_url) || '';
+  if(descEl) descEl.value = (data && data.description) || '';
+  if(viewLink) viewLink.style.display = data ? 'block' : 'none';
+}
+async function saveMerchantProfile(){
+  if(!sb || !currentUserId){ toast('Connexion indisponible, réessaie plus tard'); return; }
+  if(!myPlan){ toast('Choisis d’abord une formule pour créer ta fiche'); return; }
+  const business_name = document.getElementById('mp-business-name').value.trim();
+  if(!business_name){ toast('Indique le nom de ton commerce'); return; }
+  const subcategory_id = document.getElementById('mp-subcategory').value || null;
+  const website_url = document.getElementById('mp-website').value.trim() || null;
+  const description = document.getElementById('mp-description').value.trim() || null;
+  const { error } = await sb.from('merchant_profiles').upsert({
+    user_id: currentUserId, business_name, subcategory_id, website_url, description, updated_at: new Date().toISOString()
+  }, { onConflict: 'user_id' });
+  if(error){ console.warn('Erreur enregistrement fiche commerçante', error); toast('Erreur, réessaie'); return; }
+  const viewLink = document.getElementById('mp-view-link');
+  if(viewLink) viewLink.style.display = 'block';
+  toast('Fiche commerçante enregistrée');
+}
+
+/* ---- Statistiques de visibilité (Confort/Liberté uniquement — Découverte
+   n'y a pas droit, voir le retour client du 28/10). Compteurs simples :
+   consultations de la fiche, vues des publications, clics sur les bons
+   plans — jamais de "ventes générées", pas de mécanisme fiable pour ça. ---- */
+async function renderMerchantStatsSection(){
+  const section = document.getElementById('mp-stats-section');
+  if(!section) return;
+  if(!myPlan || myPlan === 'decouverte'){ section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  if(!sb || !currentUserId) return;
+  const { data, error } = await sb.from('merchant_stats').select('*').eq('user_id', currentUserId).maybeSingle();
+  if(error){ console.warn('Erreur chargement statistiques', error); return; }
+  const fiche = document.getElementById('mp-stat-fiche');
+  const pubs = document.getElementById('mp-stat-pubs');
+  const clicks = document.getElementById('mp-stat-clicks');
+  if(fiche) fiche.textContent = (data && data.fiche_views) || 0;
+  if(pubs) pubs.textContent = (data && data.publication_views) || 0;
+  if(clicks) clicks.textContent = (data && data.promo_clicks) || 0;
+}
+
+/* ---- Fiche commerçante publique (lecture seule, visiteurs) ---- */
+async function openMerchantFiche(userId){
+  if(!userId || !sb) return;
+  showScreen('merchant-fiche');
+  document.getElementById('mf-name').textContent = 'Chargement…';
+  document.getElementById('mf-category').textContent = '';
+  document.getElementById('mf-description').textContent = '';
+  const websiteEl = document.getElementById('mf-website');
+  websiteEl.style.display = 'none';
+  document.getElementById('mf-bonsplans-list').innerHTML = '<div style="text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Chargement…</div>';
+  const { data: profileRow, error } = await sb.from('merchant_profiles').select('*').eq('user_id', userId).maybeSingle();
+  if(error){ console.warn('Erreur chargement fiche commerçante', error); }
+  const { data: authorProfile } = await sb.from('profiles').select('pseudo, avatar_url').eq('id', userId).maybeSingle();
+  const name = (profileRow && profileRow.business_name) || (authorProfile && authorProfile.pseudo) || 'Commerçant Zapy';
+  document.getElementById('mf-title').textContent = name;
+  document.getElementById('mf-name').textContent = name;
+  const subcat = profileRow && profileRow.subcategory_id ? (COMMERCE_SUBCATS.find(s=>s.id===profileRow.subcategory_id) || {}).label : null;
+  document.getElementById('mf-category').textContent = subcat || 'Commerce';
+  document.getElementById('mf-description').textContent = (profileRow && profileRow.description) || '';
+  const avatarEl = document.getElementById('mf-avatar');
+  if(avatarEl) avatarEl.textContent = name.trim().charAt(0).toUpperCase();
+  if(profileRow && profileRow.website_url){
+    websiteEl.href = profileRow.website_url;
+    websiteEl.style.display = 'inline-block';
+  }
+  // Une consultation ne compte que pour la vraie fiche d'un AUTRE commerçant
+  // (pas ses propres visites, ni une fiche encore vide/jamais créée).
+  if(profileRow && userId !== currentUserId){
+    sb.rpc('increment_merchant_stat', { target_user_id: userId, stat_name: 'fiche_views' }).then(()=>{}, ()=>{});
+  }
+  const nowIso = new Date().toISOString();
+  const { data: bonsPlans } = await sb.from('publications').select('id, title, description, photo_url, commune')
+    .eq('author_id', userId).eq('category_id', 'bonsplans').eq('status', 'active')
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`).order('created_at', {ascending:false});
+  const listEl = document.getElementById('mf-bonsplans-list');
+  if(!bonsPlans || bonsPlans.length === 0){
+    listEl.innerHTML = '<div style="text-align:center; padding:20px 0; color:#90A4AE; font-size:13px;">Aucun bon plan en cours.</div>';
+  } else {
+    listEl.innerHTML = bonsPlans.map(b => `
+      <div class="post-card" style="cursor:pointer;" onclick="openBonPlanFromFiche('${b.id}', '${userId}')">
+        <div class="post-main">
+          <div class="post-title">${b.title}</div>
+          <div class="post-text">${b.description || ''}</div>
+          <div style="font-size:11px; color:var(--muted); margin-top:4px;">${b.commune || ''}</div>
+        </div>
+      </div>`).join('');
+  }
+}
+// Clic sur un bon plan depuis la fiche commerçante : compte comme un "clic
+// bon plan" pour les statistiques du commerçant, puis ouvre la publication.
+function openBonPlanFromFiche(pubId, merchantUserId){
+  if(sb && merchantUserId !== currentUserId){
+    sb.rpc('increment_merchant_stat', { target_user_id: merchantUserId, stat_name: 'promo_clicks' }).then(()=>{}, ()=>{});
+  }
+  openComments(pubId);
 }
 
 /* ---- Suivre un artiste/membre (voir aussi le tri des publications dans
@@ -4821,8 +5051,12 @@ async function subscribeToPlan(id){
   if(!t) return;
   if(!sb || !currentUserId){ toast('Connexion au serveur en cours, réessaie dans un instant'); return; }
   toast('Redirection vers le paiement sécurisé…');
+  // promo_price : si renseigné, l'edge function met en place l'offre de
+  // lancement (1er mois offert puis ce prix pendant 2 mois, avant retour
+  // au plein tarif) via un échéancier Stripe. Absent/non configuré côté
+  // Stripe → l'edge function retombe sur un abonnement simple au plein tarif.
   const { data, error } = await sb.functions.invoke('create-checkout-session', {
-    body: { plan_id: t.id, plan_name: t.name, price: t.price }
+    body: { plan_id: t.id, plan_name: t.name, price: t.price, promo_price: t.promoPrice || null }
   });
   if(error || !data?.url){
     if(data?.error === 'not_configured'){
@@ -4846,11 +5080,33 @@ function startMerchantPublish(){
   selectFormCat('commerces');
   isMerchantPost = true;
 }
-// Modifie en une fois le nom, le prix ET les avantages inclus d'une formule
-// (set_plan_tier_details, admin uniquement) — avant, seul le prix était
-// modifiable (set_plan_tier_price). Trois prompt() à la suite plutôt qu'un
-// vrai formulaire, pour rester cohérent avec le reste de l'admin (voir
-// generateInvoice, confirmDeleteAccount, etc. qui font de même).
+// Les bons plans sont un quota séparé des publications classiques côté
+// formule (Découverte : 0, Confort : 3, Liberté : illimité — voir le
+// trigger enforce_merchant_publication_limits côté base). Découverte n'y a
+// pas droit du tout : on le dit tout de suite plutôt que de laisser l'envoi
+// échouer silencieusement.
+function startMerchantBonPlan(){
+  if(!myPlan){
+    toast('Choisis d’abord une formule ci-dessous pour publier un bon plan');
+    const list = document.getElementById('pricing-list');
+    if(list) list.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  if(myPlan === 'decouverte'){
+    toast('La formule Découverte ne comprend pas de bon plan — passe à Confort ou Liberté');
+    const list = document.getElementById('pricing-list');
+    if(list) list.scrollIntoView({behavior:'smooth', block:'start'});
+    return;
+  }
+  showScreen('publier');
+  selectFormCat('bonsplans');
+  isMerchantPost = true;
+}
+// Modifie en une fois le nom, le prix, le prix de lancement ET les
+// avantages inclus d'une formule (set_plan_tier_details, admin uniquement).
+// Quatre prompt() à la suite plutôt qu'un vrai formulaire, pour rester
+// cohérent avec le reste de l'admin (voir generateInvoice,
+// confirmDeleteAccount, etc. qui font de même).
 async function editPlanTierPrice(id){
   const t = PLAN_TIERS.find(x=>x.id===id);
   if(!t) return;
@@ -4858,17 +5114,25 @@ async function editPlanTierPrice(id){
   if(nameInput === null) return;
   const name = nameInput.trim();
   if(!name){ toast('Le nom ne peut pas être vide'); return; }
-  const priceInput = prompt('Prix mensuel pour "' + name + '" (en €) :', t.price);
+  const priceInput = prompt('Prix mensuel plein tarif pour "' + name + '" (en €) :', t.price);
   if(priceInput === null) return;
   const price = parseFloat(priceInput.replace(',', '.'));
   if(isNaN(price) || price < 0){ toast('Prix invalide'); return; }
   const rounded = Math.round(price * 100) / 100;
+  const promoInput = prompt('Prix de lancement (payé aux mois 2 et 3, après un 1er mois offert) — laisser vide pour aucune offre de lancement :', t.promoPrice != null ? t.promoPrice : '');
+  if(promoInput === null) return;
+  let promo = null;
+  if(promoInput.trim() !== ''){
+    promo = parseFloat(promoInput.replace(',', '.'));
+    if(isNaN(promo) || promo < 0 || promo >= rounded){ toast('Prix de lancement invalide (doit être positif et inférieur au plein tarif)'); return; }
+    promo = Math.round(promo * 100) / 100;
+  }
   const featsInput = prompt('Avantages inclus, un par ligne :', t.feats.join('\n'));
   if(featsInput === null) return;
   const feats = featsInput.split('\n').map(f => f.trim()).filter(Boolean);
   if(feats.length === 0){ toast('Indique au moins un avantage'); return; }
   if(!sb){ toast('Connexion indisponible, réessaie plus tard'); return; }
-  const { data, error } = await sb.rpc('set_plan_tier_details', { tier_id: t.id, new_name: name, new_price: rounded, new_feats: feats });
+  const { data, error } = await sb.rpc('set_plan_tier_details', { tier_id: t.id, new_name: name, new_price: rounded, new_promo_price: promo, new_feats: feats });
   if(error || data !== true){ console.warn('Erreur mise à jour de la formule', error); toast('Erreur, réessaie'); return; }
   await loadPlanTierPrices();
   renderAdmin();
@@ -4944,9 +5208,16 @@ function renderPricingList(){
   if(!el) return;
   el.innerHTML = PLAN_TIERS.map(t => {
     const active = myPlan === t.id;
+    // Offre de lancement : 1er mois offert, puis promoPrice pendant 2 mois,
+    // puis retour au plein tarif — affichée seulement si une formule a un
+    // prix de lancement configuré (voir editPlanTierPrice côté admin).
+    const promoHtml = t.promoPrice != null
+      ? `<div class="price-promo">1er mois offert, puis ${t.promoPrice}€/mois pendant 2 mois</div>`
+      : '';
     return `
     <div class="price-card ${t.featured?'featured':''}">
       <div class="price-top"><span class="price-name">${t.name}</span><span class="price-amount">${t.price}€<small>/mois</small></span></div>
+      ${promoHtml}
       <ul class="price-feats">${t.feats.map(f=>`<li>${f}</li>`).join('')}</ul>
       ${active
         ? `<button type="button" class="price-btn" disabled style="opacity:0.7; cursor:default;">✓ Formule active</button>`
